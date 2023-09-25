@@ -3,9 +3,7 @@
 #include <stdbool.h>
 
 enum Tokens {
-	IF = 256,
-	THEN = 257,
-	ELSE = 258,
+	STRING = 258,
 	OPDELIM = 259,
 	ID = 260,
 	NUM = 261
@@ -23,11 +21,12 @@ enum Atributos {
 typedef struct {
 	int nome_token;
 	int atributo;
+	char str[20];
 } Token;
 
-int estado = 0;
-int partida = 0;
-int cont_sim_lido = 0;
+void print_token(Token token) {
+	puts(token.str);
+}
 
 char *readFile(char *fileName)
 {
@@ -55,12 +54,11 @@ char *readFile(char *fileName)
 typedef struct state {
 	char *name;
 	struct state *(*next)(char c);
-	bool (*finished)(void);
-	Token (*get_token)(void);
+	Token (*get_token)(char c);
 } State;
 
 State
-	init_state,
+	state_init,
 	
 	state_eq_0,
 	state_eq_1,
@@ -72,27 +70,46 @@ State
 	
 	state_gt_0,
 	state_gt_1,
-	state_ge
+	state_ge,
+	
+	state_opdelim
 ;
 
 State* next_final(char c) {
-	return &init_state;
+	printf("Final");
+	return &state_init;
 }
 
 State *next_init(char c) {
 	switch(c) {
 	case ' ':
 	case '\n':
-		return &init_state;
+		return &state_init;
 	case '=':
 		return &state_eq_0;
 	case '<':
 		return &state_lt_0;
 	case '>':
 		return &state_gt_0;
+	case '+':
+	case '-':
+	case '*':
+	case '/':
+	case '%':
+	case '^':
+	case '(':
+	case ')':
+	case '{':
+	case '}':
+	case '[':
+	case ']':
+	case ';':
+	case ',':
+	case ':':
+		return &state_opdelim;
 	}
 	
-	return &init_state;
+	return &state_init;
 }
 
 State *next_eq_0(char c) {
@@ -111,64 +128,81 @@ State *next_lt_0(char c) {
 
 State *next_gt_0(char c) {
 	if (c == '=')
-		return &state_le;
+		return &state_ge;
 	
-	return &state_lt_1;
+	return &state_gt_1;
 }
 
-Token get_token_nop(void) {
+Token get_token_nop(char c) {
 	Token token = { 0, 0 };
 	
 	return token; 
 }
 
-Token get_token_eq_1(void) {
-	printf("<OPDELIM, =>\n");
-	
+Token get_token_eq_1(char c) {
 	Token token = {
 		.nome_token = OPDELIM,
-		.atributo = '='
+		.atributo = '=',
+		.str = "<OPDELIM, = >\n"
 	};
 	
 	return token;
 };
 
-Token get_token_deq(void) {
-	printf("<OPDELIM, EQ>\n");
-	
+Token get_token_deq(char c) {
+	return (Token) {
+		.nome_token = OPDELIM,
+		.atributo = EQ,
+		.str = "<OPDELIM, == >\n"
+	};
+};
+
+Token get_token_lt_1(char c) {
+	return (Token)  {
+		.nome_token = OPDELIM,
+		.atributo = LT,
+		.str = "<OPDELIM, < >\n"
+	};
+};
+
+Token get_token_le(char c) {
+	return (Token) {
+		.nome_token = OPDELIM,
+		.atributo = LE,
+		.str = "<OPDELIM, <= >\n"
+	};
+};
+
+Token get_token_gt_1(char c) {
+	return (Token) {
+		.nome_token = OPDELIM,
+		.atributo = GT,
+		.str = "<OPDELIM, > >\n"
+	};
+};
+
+Token get_token_ge(char c) {
+	return (Token) {
+		.nome_token = OPDELIM,
+		.atributo = GE,
+		.str = "<OPDELIM, >= >\n"
+	};
+};
+
+Token get_token_opdelim(char c) {
 	Token token = {
 		.nome_token = OPDELIM,
-		.atributo = EQ
+		.atributo = c
 	};
+	
+	sprintf(token.str ,"<OPDELIM, %c >\n", c);
 	
 	return token;
 };
 
-Token get_token_lt_1(void) {
-	printf("<OPDELIM, <>\n");
-	
-	Token token = {
-		.nome_token = OPDELIM,
-		.atributo = LT
-	};
-	
-	return token;
-};
-
-Token get_token_le(void) {
-	printf("<OPDELIM, <>\n");
-	
-	Token token = {
-		.nome_token = OPDELIM,
-		.atributo = LE
-	};
-	
-	return token;
-};
-
-void init_state_machine(void) {
-	init_state.next = next_init;
-	init_state.get_token = get_token_nop;
+void state_init_machine(void) {
+	state_init.next = next_init;
+	state_init.get_token = get_token_nop;
 	
 	state_eq_0.next = next_eq_0;
 	state_eq_0.get_token = get_token_nop;
@@ -187,6 +221,18 @@ void init_state_machine(void) {
 	
 	state_le.next = next_final;
 	state_le.get_token = get_token_le;
+	
+	state_gt_0.next = next_gt_0;
+	state_gt_0.get_token = get_token_nop;
+	
+	state_gt_1.next = next_final;
+	state_gt_1.get_token = get_token_gt_1;
+	
+	state_ge.next = next_final;
+	state_ge.get_token = get_token_ge;
+	
+	state_opdelim.next = next_final;
+	state_opdelim.get_token = get_token_opdelim;
 }
 
 Token proximo_token(char **cursor, State *estado)
@@ -195,18 +241,14 @@ Token proximo_token(char **cursor, State *estado)
 	char c;
 	
 	while ((c = *(*cursor)++) != '\0') {
-		printf("%c\n", c);
+		printf("char: %c\n", c);
 		//puts(*cursor);
 		
-		token = estado->get_token();
+		estado = estado->next(c);
 		
-		if (token.nome_token != 0) {
-			return token;
-		}
+		token = estado->get_token(c);
 		
-		State* novo_estado = estado->next(c);
-		
-		estado = novo_estado;
+		if (token.nome_token != 0) return token;
 	}
 	
 	token.nome_token = EOF;
@@ -216,15 +258,16 @@ Token proximo_token(char **cursor, State *estado)
 
 int main ()
 {
-	init_state_machine();
+	state_init_machine();
 	
 	Token token;
-	State* estado = &init_state;
+	State* estado = &state_init;
 	
 	char *code = readFile("programa.txt");
 	
 	do {
 		token = proximo_token(&code, estado);
+		print_token(token);
 	}
 	while (token.nome_token != EOF);
 }

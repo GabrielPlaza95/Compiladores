@@ -10,27 +10,28 @@ typedef struct snode {
 	char *symbol;
 } symtable_node;
 
-typedef symtable_node *symtable;
+symtable_node *symbol_table;
 
-symtable symtable_create(void) {
-	return malloc(sizeof (symtable_node));
-}
-
-char *symtable_insert(symtable root, char *symbol) {
-	symtable_node *next = root;
+char *symtable_insert(char *symbol) {
+	symtable_node *next = symbol_table;
+	
+	if (next->symbol == NULL)
+		return symbol;
 	
 	do {
 		int cmp = strcmp(symbol, next->symbol);
 		
-		if (cmp < 0)
-			next = next->left;
-		else if (cmp < 0)
-			next = next->right;
-		else
-			return next->symbol;
+		printf("cmp\n");
 		
-	} while (next != NULL);
-		
+		if (cmp == 0) {
+			free(symbol);
+			return(next->symbol);
+		}
+		next = (cmp < 0) ? next->left : next->right;
+	}
+	while (next != NULL);
+	
+	printf("Out of the loop\n");
 	
 	next = malloc(sizeof *next);
 	next->left = NULL;
@@ -101,8 +102,6 @@ typedef struct state {
 	struct state *(*next)(char c);
 	Token (*get_token)(char c);
 } State;
-
-symtable symbol_table;
 
 State
 	state_init,
@@ -278,7 +277,7 @@ Token get_token_num(char c) {
 	};
 };
 
-void state_init_machine(void) {
+void state_machine_init(void) {
 	state_init.next = next_init;
 	state_init.get_token = get_token_nop;
 	
@@ -339,21 +338,23 @@ Token proximo_token(char **start)
 		//printf("start: %p\ncursor: %p\n", *start, cursor);
 		
 		estado = estado->next(c);
+		
+		
+		token_len += (estado == &state_num_2) ? 0 : 1;
+			
+		char * str = malloc(token_len + 1);
+		strncpy(str, *start, token_len);
+		
+		str[token_len + 1] = '\0';
+		
+		//printf("token: %s, len: %i\n", str, token_len);
+		
+		token.sym = symtable_insert(str);
+		
 		token = estado->get_token(c);
 		
-		token_len++;
-		
-		
-		
 		if (token.nome_token != 0) {
-			int n = (estado == &state_num_2) ? -1 : 0;
-			
-			char * str = malloc(token_len + n + 1);
-			strncpy(str, *start, token_len + n + 1);
-			
-			token.sym = symtable_insert(symbol_table, str);
-			
-			*start = cursor + n;
+			*start += token_len;
 			
 			return token;
 		}
@@ -366,9 +367,9 @@ Token proximo_token(char **start)
 
 int main ()
 {
-	symbol_table = symtable_create();
+	symbol_table = malloc(sizeof (symtable_node));
 	
-	state_init_machine();
+	state_machine_init();
 	
 	Token token;
 	

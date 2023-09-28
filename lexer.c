@@ -1,6 +1,46 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <ctype.h>
+#include <string.h>
+
+typedef struct snode {
+	struct snode *left;
+	struct snode *right;
+	char *symbol;
+} symtable_node;
+
+typedef symtable_node *symtable;
+
+symtable symtable_create(void) {
+	return malloc(sizeof (symtable_node));
+}
+
+char *symtable_insert(symtable root, char *symbol) {
+	symtable_node *next = root;
+	
+	do {
+		int cmp = strcmp(symbol, next->symbol);
+		
+		if (cmp < 0)
+			next = next->left;
+		else if (cmp < 0)
+			next = next->right;
+		else
+			return next->symbol;
+		
+	} while (next != NULL);
+		
+	
+	next = malloc(sizeof *next);
+	next->left = NULL;
+	next->right = NULL;
+	next->symbol = symbol;
+	
+	return next->symbol;
+}
+
+
 
 enum Tokens {
 	STRING = 258,
@@ -22,7 +62,12 @@ typedef struct {
 	int nome_token;
 	int atributo;
 	char str[20];
+	char *sym;
 } Token;
+
+bool is_digit(char c) {
+	return isdigit(c) > 0;
+}
 
 void print_token(Token token) {
 	puts(token.str);
@@ -57,6 +102,8 @@ typedef struct state {
 	Token (*get_token)(char c);
 } State;
 
+symtable symbol_table;
+
 State
 	state_init,
 	
@@ -72,11 +119,14 @@ State
 	state_gt_1,
 	state_ge,
 	
-	state_opdelim
+	state_opdelim,
+	
+	state_num_0,
+	state_num_1,
+	state_num_2
 ;
 
 State* next_final(char c) {
-	printf("Final");
 	return &state_init;
 }
 
@@ -107,6 +157,9 @@ State *next_init(char c) {
 	case ',':
 	case ':':
 		return &state_opdelim;
+	default:
+		if (is_digit(c))
+			return &state_num_0;
 	}
 	
 	return &state_init;
@@ -132,6 +185,23 @@ State *next_gt_0(char c) {
 	
 	return &state_gt_1;
 }
+
+State *next_num_0(char c) {
+	if (is_digit(c))
+		return &state_num_0;
+	if (c == '.')
+		return &state_num_1;
+	
+	return &state_num_2;
+}
+
+State *next_num_1(char c) {
+	if (is_digit(c))
+		return &state_num_1;
+	
+	return &state_num_2;
+}
+
 
 Token get_token_nop(char c) {
 	Token token = { 0, 0 };
@@ -200,6 +270,14 @@ Token get_token_opdelim(char c) {
 	return token;
 };
 
+Token get_token_num(char c) {
+	return (Token) {
+		.nome_token = NUM,
+		.atributo = 0,
+		.str = "<NUM,  >\n"
+	};
+};
+
 void state_init_machine(void) {
 	state_init.next = next_init;
 	state_init.get_token = get_token_nop;
@@ -233,22 +311,52 @@ void state_init_machine(void) {
 	
 	state_opdelim.next = next_final;
 	state_opdelim.get_token = get_token_opdelim;
+	
+	state_num_0.next = next_num_0;
+	state_num_0.get_token = get_token_nop;
+	
+	state_num_1.next = next_num_1;
+	state_num_1.get_token = get_token_nop;
+	
+	state_num_2.next = next_final;
+	state_num_2.get_token = get_token_num;
 }
 
-Token proximo_token(char **cursor, State *estado)
+Token proximo_token(char **start)
 {
 	Token token;
 	char c;
+	char *cursor = *start;
+	int token_len = 0;
 	
-	while ((c = *(*cursor)++) != '\0') {
-		printf("char: %c\n", c);
-		//puts(*cursor);
+	State* estado = &state_init;
+	
+	while ((c = *cursor++) != '\0') {
+		// problema: números conferem um caracter após o último
+		
+		//printf("start: %c\ncursor: %c\n", **start, c);
+		//puts(cursor);
+		//printf("start: %p\ncursor: %p\n", *start, cursor);
 		
 		estado = estado->next(c);
-		
 		token = estado->get_token(c);
 		
-		if (token.nome_token != 0) return token;
+		token_len++;
+		
+		
+		
+		if (token.nome_token != 0) {
+			int n = (estado == &state_num_2) ? -1 : 0;
+			
+			char * str = malloc(token_len + n + 1);
+			strncpy(str, *start, token_len + n + 1);
+			
+			token.sym = symtable_insert(symbol_table, str);
+			
+			*start = cursor + n;
+			
+			return token;
+		}
 	}
 	
 	token.nome_token = EOF;
@@ -258,15 +366,16 @@ Token proximo_token(char **cursor, State *estado)
 
 int main ()
 {
+	symbol_table = symtable_create();
+	
 	state_init_machine();
 	
 	Token token;
-	State* estado = &state_init;
 	
 	char *code = readFile("programa.txt");
 	
 	do {
-		token = proximo_token(&code, estado);
+		token = proximo_token(&code);
 		print_token(token);
 	}
 	while (token.nome_token != EOF);

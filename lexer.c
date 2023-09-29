@@ -40,6 +40,7 @@ char *symtable_insert(char *symbol) {
 
 
 enum Tokens {
+	SPACE = -1,
 	STRING = 258,
 	OPDELIM = 259,
 	ID = 260,
@@ -107,6 +108,9 @@ State
 	state_eq_1,
 	state_deq,
 	
+	state_ne_0,
+	state_ne_1,
+	
 	state_lt_0,
 	state_lt_1,
 	state_le,
@@ -129,7 +133,7 @@ Token next_init(State **state, char *start, int token_len) {
 	case ' ':
 	case '\n':
 		*state =  &state_init;
-		break;
+		return (Token) { SPACE, 0 };
 	case '=':
 		*state =  &state_eq_0;
 		break;
@@ -138,6 +142,9 @@ Token next_init(State **state, char *start, int token_len) {
 		break;
 	case '>':
 		*state =  &state_gt_0;
+		break;
+	case '~':
+		*state =  &state_ne_0;
 		break;
 	case '+':
 	case '-':
@@ -189,13 +196,33 @@ Token next_eq_1(State **state, char *start, int token_len) {
 Token next_deq(State **state, char *start, int token_len) {
 	Token token = {
 		.nome_token = OPDELIM,
-		.atributo = '=',
+		.atributo = EQ,
 		.str = "<OPDELIM, == >\n",
 		.len = 2
 	};
 	
 	return token;
 };
+
+Token next_ne_0(State **state, char *start, int token_len) {
+	char c = start[token_len - 1];
+	
+	*state = (c == '=') ? &state_ne_1 : &state_init; // ERRO
+	
+	return token_null;
+}
+
+Token next_ne_1(State **state, char *start, int token_len) {
+	Token token = {
+		.nome_token = OPDELIM,
+		.atributo = NE,
+		.str = "<OPDELIM, ~= >\n",
+		.len = 2
+	};
+	
+	return token;
+};
+
 
 Token next_lt_0(State **state, char *start, int token_len) {
 	char c = start[token_len - 1];
@@ -314,6 +341,9 @@ void state_machine_init(void) {
 	state_eq_1.next = next_eq_1;
 	state_deq.next = next_deq;
 	
+	state_ne_0.next = next_ne_0;
+	state_ne_1.next = next_ne_1;
+	
 	state_lt_0.next = next_lt_0;
 	state_lt_1.next = next_lt_1;
 	state_le.next = next_le;
@@ -329,21 +359,28 @@ void state_machine_init(void) {
 	state_num_2.next = next_num_2;
 }
 
-Token proximo_token(char **str)
+Token proximo_token(char **start)
 {
 	Token token;
-	char c, *start = *str;
+	char c;
 	int token_len = 0;
 	
 	State* estado = &state_init;
 	
-	while ((c = start[token_len++]) != '\0' || estado != &state_init) {
-		//printf("start: %c\ncursor: %c\nlen: %i\n", *start, c, token_len);
+	while ((c = (*start)[token_len++]) != '\0' || estado != &state_init) {
+		printf("start: %c\ncursor: %c\nlen: %i\n", **start, c, token_len);
 		
-		token = estado->next(&estado, start, token_len);
+		token = estado->next(&estado, *start, token_len);
+		
+		if (token.nome_token == SPACE) {
+			token_len = 0;
+			++*start;
+			continue;
+		}
+			
 		
 		if (token.nome_token != 0) {
-			*str += token.len;
+			*start += token.len;
 			
 			return token;
 		}

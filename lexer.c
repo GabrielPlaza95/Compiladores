@@ -4,6 +4,34 @@
 #include <ctype.h>
 #include <string.h>
 
+#define TOKEN_NULL (Token) { 0 }
+#define TOKEN_SKIP (Token) { SKIP, 0 }
+
+enum Tokens {
+	SKIP = -1,
+	STRING = 258,
+	OPDELIM = 259,
+	ID = 260,
+	NUM = 261,
+};
+
+typedef struct {
+	int nome_token;
+	int atributo;
+	int len;
+	char str[20];
+	char *sym;
+} Token;
+
+enum Atributos {
+	LT = 262,
+	LE = 263,
+	EQ = 264,
+	NE = 265,
+	GT = 266,
+	GE = 267
+};
+
 typedef struct snode {
 	struct snode *left;
 	struct snode *right;
@@ -36,35 +64,6 @@ char *symtable_insert(char *symbol) {
 	
 	return next->symbol;
 }
-
-
-
-enum Tokens {
-	SPACE = -1,
-	STRING = 258,
-	OPDELIM = 259,
-	ID = 260,
-	NUM = 261,
-};
-
-enum Atributos {
-	LT = 262,
-	LE = 263,
-	EQ = 264,
-	NE = 265,
-	GT = 266,
-	GE = 267
-};
-
-typedef struct {
-	int nome_token;
-	int atributo;
-	int len;
-	char str[20];
-	char *sym;
-} Token;
-
-static Token token_null = { 0 };
 
 bool is_digit(char c) {
 	return isdigit(c) > 0;
@@ -130,7 +129,14 @@ State
 	
 	state_str_0,
 	state_str_1,
-	state_str_2
+	state_str_2,
+	
+	state_cmt_0,
+	state_cmt_1,
+	//state_cmt_2,
+	//state_cmt_3,
+	//state_cmt_4,
+	state_cmt_5
 ;
 
 Token next_init(State **state, char *start, int token_len) {
@@ -152,12 +158,15 @@ Token next_init(State **state, char *start, int token_len) {
 	case '"':
 		*state = &state_str_0;
 		break;
+	case '-':
+		*state = &state_cmt_0;
+		break;
 	default:
 		if (isspace(c)) {
 			*state = &state_init;
-			return (Token) { SPACE, 0 };
+			return TOKEN_SKIP;
 		}
-		else if (strchr("+-*/%(){}[];,:", c) != NULL) {
+		else if (strchr("+*/%(){}[];,:", c) != NULL) {
 			*state = &state_opdelim;
 		}
 		else if (is_digit(c)) {
@@ -171,7 +180,7 @@ Token next_init(State **state, char *start, int token_len) {
 		}
 	}
 	
-	return token_null;
+	return TOKEN_NULL;
 }
 
 Token next_eq_0(State **state, char *start, int token_len) {
@@ -179,7 +188,7 @@ Token next_eq_0(State **state, char *start, int token_len) {
 	
 	*state = (c == '=') ? &state_deq : &state_eq_1;
 	
-	return token_null;
+	return TOKEN_NULL;
 }
 
 Token next_eq_1(State **state, char *start, int token_len) {
@@ -209,7 +218,7 @@ Token next_ne_0(State **state, char *start, int token_len) {
 	
 	*state = (c == '=') ? &state_ne_1 : &state_init; // ERRO
 	
-	return token_null;
+	return TOKEN_NULL;
 }
 
 Token next_ne_1(State **state, char *start, int token_len) {
@@ -229,7 +238,7 @@ Token next_lt_0(State **state, char *start, int token_len) {
 	
 	*state = (c == '=') ? &state_le : &state_lt_1;
 	
-	return token_null;
+	return TOKEN_NULL;
 }
 
 Token next_lt_1(State **state, char *start, int token_len) {
@@ -257,7 +266,7 @@ Token next_gt_0(State **state, char *start, int token_len) {
 	
 	*state = (c == '=') ? &state_ge : &state_gt_1;
 	
-	return token_null;
+	return TOKEN_NULL;
 }
 
 Token next_gt_1(State **state, char *start, int token_len) {
@@ -281,11 +290,11 @@ Token next_ge(State **state, char *start, int token_len) {
 Token next_opdelim(State **state, char *start, int token_len) {
 	Token token = {
 		.nome_token = OPDELIM,
-		.atributo = *start,
+		.atributo = start[0],
 		.len = 1
 	};
 	
-	sprintf(token.str ,"<OPDELIM, %c >\n", *start);
+	sprintf(token.str ,"<OPDELIM, %c >\n", token.atributo);
 	
 	return token;
 };
@@ -300,7 +309,7 @@ Token next_num_0(State **state, char *start, int token_len) {
 	else
 		*state = &state_num_2;
 	
-	return token_null;
+	return TOKEN_NULL;
 }
 
 Token next_num_1(State **state, char *start, int token_len) {
@@ -308,7 +317,7 @@ Token next_num_1(State **state, char *start, int token_len) {
 	
 	*state = (is_digit(c)) ? &state_num_1 : &state_num_2;
 	
-	return token_null;
+	return TOKEN_NULL;
 }
 
 Token next_num_2(State **state, char *start, int token_len) {
@@ -324,8 +333,6 @@ Token next_num_2(State **state, char *start, int token_len) {
 	strncpy(token.sym, start, token_len);
 	token.sym[token_len + 1] = '\0';
 	
-	//printf("token: %s, len: %i\n", token.sym, token_len);
-	
 	token.sym = symtable_insert(token.sym);
 	
 	sprintf(token.str ,"<NUM, %s >\n", token.sym);
@@ -338,7 +345,7 @@ Token next_id_0(State **state, char *start, int token_len) {
 	
 	*state = (isalnum(c) || c == '_') ? &state_id_0 : &state_id_1;
 	
-	return token_null;
+	return TOKEN_NULL;
 }
 
 Token next_id_1(State **state, char *start, int token_len) {
@@ -353,8 +360,6 @@ Token next_id_1(State **state, char *start, int token_len) {
 
 	strncpy(token.sym, start, token_len);
 	token.sym[token_len + 1] = '\0';
-	
-	//printf("token: %s, len: %i\n", token.sym, token_len);
 	
 	token.sym = symtable_insert(token.sym);
 	
@@ -373,7 +378,7 @@ Token next_str_0(State **state, char *start, int token_len) {
 	else
 		*state = &state_str_0;
 	
-	return token_null;
+	return TOKEN_NULL;
 }
 
 Token next_str_1(State **state, char *start, int token_len) {
@@ -381,7 +386,7 @@ Token next_str_1(State **state, char *start, int token_len) {
 	
 	*state = (strchr("abfnrtv\\", c) != NULL) ? &state_str_0 : &state_init; // ERRO
 	
-	return token_null;
+	return TOKEN_NULL;
 }
 
 Token next_str_2(State **state, char *start, int token_len) {
@@ -397,14 +402,45 @@ Token next_str_2(State **state, char *start, int token_len) {
 	strncpy(token.sym, start, token_len);
 	token.sym[token_len + 1] = '\0';
 	
-	//printf("token: %s, len: %i\n", token.sym, token_len);
-	
 	token.sym = symtable_insert(token.sym);
 	
 	sprintf(token.str ,"<STRING, %s >\n", token.sym);
 	
 	return token;
 };
+
+Token next_cmt_0(State **state, char *start, int token_len) {
+	char c = start[token_len - 1];
+	
+	if (c != '-') {
+		*state = &state_opdelim;
+		return TOKEN_NULL;
+	}
+	
+	*state = &state_cmt_1;
+	return TOKEN_SKIP;
+}
+
+Token next_cmt_1(State **state, char *start, int token_len) {
+	char c = start[token_len - 1];
+	
+	if (c == '\n')
+		*state = &state_init;
+	//else if (c == '[')
+	//	*state = &state_cmt_2;
+	else
+		*state = &state_cmt_5;
+	
+	return TOKEN_SKIP;
+}
+
+Token next_cmt_5(State **state, char *start, int token_len) {
+	char c = start[token_len - 1];
+	
+	*state = (c != '\n') ? &state_cmt_5 : &state_init;
+	
+	return TOKEN_SKIP;
+}
 
 
 void state_machine_init(void) {
@@ -437,6 +473,13 @@ void state_machine_init(void) {
 	state_str_0.next = next_str_0;
 	state_str_1.next = next_str_1;
 	state_str_2.next = next_str_2;
+	
+	state_cmt_0.next = next_cmt_0;
+	state_cmt_1.next = next_cmt_1;
+	//state_cmt_2.next = next_cmt_2;
+	//state_cmt_3.next = next_cmt_3;
+	//state_cmt_4.next = next_cmt_4;
+	state_cmt_5.next = next_cmt_5;
 }
 
 Token proximo_token(char **start)
@@ -448,16 +491,16 @@ Token proximo_token(char **start)
 	State* estado = &state_init;
 	
 	while ((c = (*start)[token_len++]) != '\0' || estado != &state_init) {
-		//printf("start: %c\ncursor: %c\nlen: %i\n", **start, c, token_len);
+		//printf("\nstart: %c\ncursor: %c\nlen: %i\n", **start, c, token_len);
 		
 		token = estado->next(&estado, *start, token_len);
 		
-		if (token.nome_token == SPACE) {
+		if (token.nome_token == SKIP) {
+			*start += token_len;
 			token_len = 0;
-			++*start;
+			
 			continue;
 		}
-			
 		
 		if (token.nome_token != 0) {
 			*start += token.len;

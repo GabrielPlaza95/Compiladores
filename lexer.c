@@ -44,7 +44,7 @@ enum Tokens {
 	STRING = 258,
 	OPDELIM = 259,
 	ID = 260,
-	NUM = 261
+	NUM = 261,
 };
 
 enum Atributos {
@@ -123,54 +123,54 @@ State
 	
 	state_num_0,
 	state_num_1,
-	state_num_2
+	state_num_2,
+	
+	state_id_0,
+	state_id_1,
+	
+	state_str_0,
+	state_str_1,
+	state_str_2
 ;
 
 Token next_init(State **state, char *start, int token_len) {
 	char c = start[token_len - 1];
 	
 	switch(c) {
-	case ' ':
-	case '\n':
-		*state =  &state_init;
-		return (Token) { SPACE, 0 };
 	case '=':
-		*state =  &state_eq_0;
+		*state = &state_eq_0;
 		break;
 	case '<':
-		*state =  &state_lt_0;
+		*state = &state_lt_0;
 		break;
 	case '>':
-		*state =  &state_gt_0;
+		*state = &state_gt_0;
 		break;
 	case '~':
-		*state =  &state_ne_0;
+		*state = &state_ne_0;
 		break;
-	case '+':
-	case '-':
-	case '*':
-	case '/':
-	case '%':
-	case '^':
-	case '(':
-	case ')':
-	case '{':
-	case '}':
-	case '[':
-	case ']':
-	case ';':
-	case ',':
-	case ':':
-		*state =  &state_opdelim;
+	case '"':
+		*state = &state_str_0;
 		break;
 	default:
-		if (is_digit(c))
-			*state =  &state_num_0;
-		else
+		if (isspace(c)) {
 			*state = &state_init;
-		break;
+			return (Token) { SPACE, 0 };
+		}
+		else if (strchr("+-*/%(){}[];,:", c) != NULL) {
+			*state = &state_opdelim;
+		}
+		else if (is_digit(c)) {
+			*state = &state_num_0;
+		}
+		else if (isalpha(c) || c == '_') {
+			*state = &state_id_0;
+		}
+		else {
+			*state = &state_init;
+		}
 	}
-
+	
 	return token_null;
 }
 
@@ -278,6 +278,18 @@ Token next_ge(State **state, char *start, int token_len) {
 	};
 };
 
+Token next_opdelim(State **state, char *start, int token_len) {
+	Token token = {
+		.nome_token = OPDELIM,
+		.atributo = *start,
+		.len = 1
+	};
+	
+	sprintf(token.str ,"<OPDELIM, %c >\n", *start);
+	
+	return token;
+};
+
 Token next_num_0(State **state, char *start, int token_len) {
 	char c = start[token_len - 1];
 	
@@ -321,14 +333,75 @@ Token next_num_2(State **state, char *start, int token_len) {
 	return token;
 };
 
-Token next_opdelim(State **state, char *start, int token_len) {
-	Token token = {
-		.nome_token = OPDELIM,
-		.atributo = *start,
-		.len = 1
-	};
+Token next_id_0(State **state, char *start, int token_len) {
+	char c = start[token_len - 1];
 	
-	sprintf(token.str ,"<OPDELIM, %c >\n", *start);
+	*state = (isalnum(c) || c == '_') ? &state_id_0 : &state_id_1;
+	
+	return token_null;
+}
+
+Token next_id_1(State **state, char *start, int token_len) {
+	Token token;
+	
+	token_len -= 2;
+	
+	token.nome_token = ID;
+	token.atributo = 0;
+	token.sym = malloc(token_len + 1);
+	token.len = token_len;
+
+	strncpy(token.sym, start, token_len);
+	token.sym[token_len + 1] = '\0';
+	
+	//printf("token: %s, len: %i\n", token.sym, token_len);
+	
+	token.sym = symtable_insert(token.sym);
+	
+	sprintf(token.str ,"<ID, %s >\n", token.sym);
+	
+	return token;
+};
+
+Token next_str_0(State **state, char *start, int token_len) {
+	char c = start[token_len - 1];
+	
+	if (c == '"')
+		*state = &state_str_2;
+	else if (c == '\\')
+		*state = &state_str_1;
+	else
+		*state = &state_str_0;
+	
+	return token_null;
+}
+
+Token next_str_1(State **state, char *start, int token_len) {
+	char c = start[token_len - 1];
+	
+	*state = (strchr("abfnrtv\\", c) != NULL) ? &state_str_0 : &state_init; // ERRO
+	
+	return token_null;
+}
+
+Token next_str_2(State **state, char *start, int token_len) {
+	Token token;
+	
+	token_len -= 1;
+	
+	token.nome_token = STRING;
+	token.atributo = 0;
+	token.sym = malloc(token_len + 1);
+	token.len = token_len;
+
+	strncpy(token.sym, start, token_len);
+	token.sym[token_len + 1] = '\0';
+	
+	//printf("token: %s, len: %i\n", token.sym, token_len);
+	
+	token.sym = symtable_insert(token.sym);
+	
+	sprintf(token.str ,"<STRING, %s >\n", token.sym);
 	
 	return token;
 };
@@ -357,6 +430,13 @@ void state_machine_init(void) {
 	state_num_0.next = next_num_0;
 	state_num_1.next = next_num_1;
 	state_num_2.next = next_num_2;
+	
+	state_id_0.next = next_id_0;
+	state_id_1.next = next_id_1;
+	
+	state_str_0.next = next_str_0;
+	state_str_1.next = next_str_1;
+	state_str_2.next = next_str_2;
 }
 
 Token proximo_token(char **start)
@@ -368,7 +448,7 @@ Token proximo_token(char **start)
 	State* estado = &state_init;
 	
 	while ((c = (*start)[token_len++]) != '\0' || estado != &state_init) {
-		printf("start: %c\ncursor: %c\nlen: %i\n", **start, c, token_len);
+		//printf("start: %c\ncursor: %c\nlen: %i\n", **start, c, token_len);
 		
 		token = estado->next(&estado, *start, token_len);
 		

@@ -133,9 +133,9 @@ State
 	
 	state_cmt_0,
 	state_cmt_1,
-	//state_cmt_2,
-	//state_cmt_3,
-	//state_cmt_4,
+	state_cmt_2,
+	state_cmt_3,
+	state_cmt_4,
 	state_cmt_5
 ;
 
@@ -426,10 +426,39 @@ Token next_cmt_1(State **state, char *start, int token_len) {
 	
 	if (c == '\n')
 		*state = &state_init;
-	//else if (c == '[')
-	//	*state = &state_cmt_2;
+	else if (c == '[')
+		*state = &state_cmt_2;
 	else
 		*state = &state_cmt_5;
+	
+	return TOKEN_SKIP;
+}
+
+Token next_cmt_2(State **state, char *start, int token_len) {
+	char c = start[token_len - 1];
+	
+	if (c == '\n')
+		*state = &state_init;
+	else if (c == '[')
+		*state = &state_cmt_3;
+	else
+		*state = &state_cmt_5;
+	
+	return TOKEN_SKIP;
+}
+
+Token next_cmt_3(State **state, char *start, int token_len) {
+	char c = start[token_len - 1];
+	
+	*state = (c != ']') ? &state_cmt_3 : &state_cmt_4;
+	
+	return TOKEN_SKIP;
+}
+
+Token next_cmt_4(State **state, char *start, int token_len) {
+	char c = start[token_len - 1];
+	
+	*state = (c != ']') ? &state_cmt_3 : &state_init;
 	
 	return TOKEN_SKIP;
 }
@@ -476,9 +505,9 @@ void state_machine_init(void) {
 	
 	state_cmt_0.next = next_cmt_0;
 	state_cmt_1.next = next_cmt_1;
-	//state_cmt_2.next = next_cmt_2;
-	//state_cmt_3.next = next_cmt_3;
-	//state_cmt_4.next = next_cmt_4;
+	state_cmt_2.next = next_cmt_2;
+	state_cmt_3.next = next_cmt_3;
+	state_cmt_4.next = next_cmt_4;
 	state_cmt_5.next = next_cmt_5;
 }
 

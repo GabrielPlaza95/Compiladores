@@ -21,8 +21,6 @@ char *symtable_insert(char *symbol) {
 	do {
 		int cmp = strcmp(symbol, next->symbol);
 		
-		printf("cmp\n");
-		
 		if (cmp == 0) {
 			free(symbol);
 			return(next->symbol);
@@ -30,8 +28,6 @@ char *symtable_insert(char *symbol) {
 		next = (cmp < 0) ? next->left : next->right;
 	}
 	while (next != NULL);
-	
-	printf("Out of the loop\n");
 	
 	next = malloc(sizeof *next);
 	next->left = NULL;
@@ -62,9 +58,12 @@ enum Atributos {
 typedef struct {
 	int nome_token;
 	int atributo;
+	int len;
 	char str[20];
 	char *sym;
 } Token;
+
+static Token token_null = { 0 };
 
 bool is_digit(char c) {
 	return isdigit(c) > 0;
@@ -98,9 +97,7 @@ char *readFile(char *fileName)
 }
 
 typedef struct state {
-	char *name;
-	struct state *(*next)(char c);
-	Token (*get_token)(char c);
+	Token (*next)(struct state **state, char *start, int token_len);
 } State;
 
 State
@@ -125,21 +122,23 @@ State
 	state_num_2
 ;
 
-State* next_final(char c) {
-	return &state_init;
-}
-
-State *next_init(char c) {
+Token next_init(State **state, char *start, int token_len) {
+	char c = start[token_len - 1];
+	
 	switch(c) {
 	case ' ':
 	case '\n':
-		return &state_init;
+		*state =  &state_init;
+		break;
 	case '=':
-		return &state_eq_0;
+		*state =  &state_eq_0;
+		break;
 	case '<':
-		return &state_lt_0;
+		*state =  &state_lt_0;
+		break;
 	case '>':
-		return &state_gt_0;
+		*state =  &state_gt_0;
+		break;
 	case '+':
 	case '-':
 	case '*':
@@ -155,206 +154,196 @@ State *next_init(char c) {
 	case ';':
 	case ',':
 	case ':':
-		return &state_opdelim;
+		*state =  &state_opdelim;
+		break;
 	default:
 		if (is_digit(c))
-			return &state_num_0;
+			*state =  &state_num_0;
+		else
+			*state = &state_init;
+		break;
 	}
-	
-	return &state_init;
+
+	return token_null;
 }
 
-State *next_eq_0(char c) {
-	if (c == '=')
-		return &state_deq;
+Token next_eq_0(State **state, char *start, int token_len) {
+	char c = start[token_len - 1];
 	
-	return &state_eq_1;
+	*state = (c == '=') ? &state_deq : &state_eq_1;
+	
+	return token_null;
 }
 
-State *next_lt_0(char c) {
-	if (c == '=')
-		return &state_le;
-	
-	return &state_lt_1;
-}
-
-State *next_gt_0(char c) {
-	if (c == '=')
-		return &state_ge;
-	
-	return &state_gt_1;
-}
-
-State *next_num_0(char c) {
-	if (is_digit(c))
-		return &state_num_0;
-	if (c == '.')
-		return &state_num_1;
-	
-	return &state_num_2;
-}
-
-State *next_num_1(char c) {
-	if (is_digit(c))
-		return &state_num_1;
-	
-	return &state_num_2;
-}
-
-
-Token get_token_nop(char c) {
-	Token token = { 0, 0 };
-	
-	return token; 
-}
-
-Token get_token_eq_1(char c) {
+Token next_eq_1(State **state, char *start, int token_len) {
 	Token token = {
 		.nome_token = OPDELIM,
 		.atributo = '=',
-		.str = "<OPDELIM, = >\n"
+		.str = "<OPDELIM, = >\n",
+		.len = 1
 	};
 	
 	return token;
 };
 
-Token get_token_deq(char c) {
-	return (Token) {
+Token next_deq(State **state, char *start, int token_len) {
+	Token token = {
 		.nome_token = OPDELIM,
-		.atributo = EQ,
-		.str = "<OPDELIM, == >\n"
+		.atributo = '=',
+		.str = "<OPDELIM, == >\n",
+		.len = 2
 	};
+	
+	return token;
 };
 
-Token get_token_lt_1(char c) {
-	return (Token)  {
+Token next_lt_0(State **state, char *start, int token_len) {
+	char c = start[token_len - 1];
+	
+	*state = (c == '=') ? &state_le : &state_lt_1;
+	
+	return token_null;
+}
+
+Token next_lt_1(State **state, char *start, int token_len) {
+	Token t = {
 		.nome_token = OPDELIM,
 		.atributo = LT,
-		.str = "<OPDELIM, < >\n"
+		.str = "<OPDELIM, < >\n",
+		.len = 1
 	};
+	
+	return t;
 };
 
-Token get_token_le(char c) {
+Token next_le(State **state, char *start, int token_len) {
 	return (Token) {
 		.nome_token = OPDELIM,
 		.atributo = LE,
-		.str = "<OPDELIM, <= >\n"
+		.str = "<OPDELIM, <= >\n",
+		.len = 2
 	};
 };
 
-Token get_token_gt_1(char c) {
-	return (Token) {
+Token next_gt_0(State **state, char *start, int token_len) {
+	char c = start[token_len - 1];
+	
+	*state = (c == '=') ? &state_ge : &state_gt_1;
+	
+	return token_null;
+}
+
+Token next_gt_1(State **state, char *start, int token_len) {
+	return (Token)  {
 		.nome_token = OPDELIM,
 		.atributo = GT,
-		.str = "<OPDELIM, > >\n"
+		.str = "<OPDELIM, > >\n",
+		.len = 1
 	};
 };
 
-Token get_token_ge(char c) {
+Token next_ge(State **state, char *start, int token_len) {
 	return (Token) {
 		.nome_token = OPDELIM,
 		.atributo = GE,
-		.str = "<OPDELIM, >= >\n"
+		.str = "<OPDELIM, >= >\n",
+		.len = 2
 	};
 };
 
-Token get_token_opdelim(char c) {
-	Token token = {
-		.nome_token = OPDELIM,
-		.atributo = c
-	};
+Token next_num_0(State **state, char *start, int token_len) {
+	char c = start[token_len - 1];
 	
-	sprintf(token.str ,"<OPDELIM, %c >\n", c);
+	if (is_digit(c))
+		*state = &state_num_0;
+	else if (c == '.')
+		*state = &state_num_1;
+	else
+		*state = &state_num_2;
+	
+	return token_null;
+}
+
+Token next_num_1(State **state, char *start, int token_len) {
+	char c = start[token_len - 1];
+	
+	*state = (is_digit(c)) ? &state_num_1 : &state_num_2;
+	
+	return token_null;
+}
+
+Token next_num_2(State **state, char *start, int token_len) {
+	Token token;
+	
+	token_len -= 2;
+	
+	token.nome_token = NUM;
+	token.atributo = 0;
+	token.sym = malloc(token_len + 1);
+	token.len = token_len;
+
+	strncpy(token.sym, start, token_len);
+	token.sym[token_len + 1] = '\0';
+	
+	//printf("token: %s, len: %i\n", token.sym, token_len);
+	
+	token.sym = symtable_insert(token.sym);
+	
+	sprintf(token.str ,"<NUM, %s >\n", token.sym);
 	
 	return token;
 };
 
-Token get_token_num(char c) {
-	return (Token) {
-		.nome_token = NUM,
-		.atributo = 0,
-		.str = "<NUM,  >\n"
+Token next_opdelim(State **state, char *start, int token_len) {
+	Token token = {
+		.nome_token = OPDELIM,
+		.atributo = *start,
+		.len = 1
 	};
+	
+	sprintf(token.str ,"<OPDELIM, %c >\n", *start);
+	
+	return token;
 };
+
 
 void state_machine_init(void) {
 	state_init.next = next_init;
-	state_init.get_token = get_token_nop;
 	
 	state_eq_0.next = next_eq_0;
-	state_eq_0.get_token = get_token_nop;
-	
-	state_eq_1.next = next_final;
-	state_eq_1.get_token = get_token_eq_1;
-	
-	state_deq.next = next_final;
-	state_deq.get_token = get_token_deq;
+	state_eq_1.next = next_eq_1;
+	state_deq.next = next_deq;
 	
 	state_lt_0.next = next_lt_0;
-	state_lt_0.get_token = get_token_nop;
-	
-	state_lt_1.next = next_final;
-	state_lt_1.get_token = get_token_lt_1;
-	
-	state_le.next = next_final;
-	state_le.get_token = get_token_le;
+	state_lt_1.next = next_lt_1;
+	state_le.next = next_le;
 	
 	state_gt_0.next = next_gt_0;
-	state_gt_0.get_token = get_token_nop;
+	state_gt_1.next = next_gt_1;
+	state_ge.next = next_ge;
 	
-	state_gt_1.next = next_final;
-	state_gt_1.get_token = get_token_gt_1;
-	
-	state_ge.next = next_final;
-	state_ge.get_token = get_token_ge;
-	
-	state_opdelim.next = next_final;
-	state_opdelim.get_token = get_token_opdelim;
+	state_opdelim.next = next_opdelim;
 	
 	state_num_0.next = next_num_0;
-	state_num_0.get_token = get_token_nop;
-	
 	state_num_1.next = next_num_1;
-	state_num_1.get_token = get_token_nop;
-	
-	state_num_2.next = next_final;
-	state_num_2.get_token = get_token_num;
+	state_num_2.next = next_num_2;
 }
 
-Token proximo_token(char **start)
+Token proximo_token(char **str)
 {
 	Token token;
-	char c;
-	char *cursor = *start;
+	char c, *start = *str;
 	int token_len = 0;
 	
 	State* estado = &state_init;
 	
-	while ((c = *cursor++) != '\0') {
-		// problema: números conferem um caracter após o último
+	while ((c = start[token_len++]) != '\0' || estado != &state_init) {
+		//printf("start: %c\ncursor: %c\nlen: %i\n", *start, c, token_len);
 		
-		//printf("start: %c\ncursor: %c\n", **start, c);
-		//puts(cursor);
-		//printf("start: %p\ncursor: %p\n", *start, cursor);
-		
-		estado = estado->next(c);
-		
-		
-		token_len += (estado == &state_num_2) ? 0 : 1;
-			
-		char * str = malloc(token_len + 1);
-		strncpy(str, *start, token_len);
-		
-		str[token_len + 1] = '\0';
-		
-		//printf("token: %s, len: %i\n", str, token_len);
-		
-		token.sym = symtable_insert(str);
-		
-		token = estado->get_token(c);
+		token = estado->next(&estado, start, token_len);
 		
 		if (token.nome_token != 0) {
-			*start += token_len;
+			*str += token.len;
 			
 			return token;
 		}

@@ -28,7 +28,9 @@ enum TokenClasses {
 enum ErrorClasses {
 	INVALID_CHARACTER,
 	INVALID_TOKEN,
-	INVALID_ESCAPE_SEQUENCE
+	INVALID_ESCAPE_SEQUENCE,
+	UNTERMINATED_STRING,
+	UNTERMINATED_COMMENT
 };
 
 struct state;
@@ -76,12 +78,10 @@ State
 	state_ne_0,
 	state_ne_1,
 	
-	state_lt_0,
-	state_lt_1,
+	state_lt,
 	state_le,
 	
-	state_gt_0,
-	state_gt_1,
+	state_gt,
 	state_ge,
 	
 	state_op_delim,
@@ -96,6 +96,8 @@ State
 	state_str_0,
 	state_str_1,
 	state_str_2,
+	state_str_3,
+	state_str_4,
 	
 	state_cmt_0,
 	state_cmt_1,
@@ -200,7 +202,6 @@ void print_errors(void) {
 	ErrorListNode *next = error_list;
 	
 	while (next != NULL) {
-		
 		switch (next->error_class) {
 		case INVALID_CHARACTER:
 			printf("Caractere inválido: %c\n", next->str[0]);
@@ -209,7 +210,14 @@ void print_errors(void) {
 			printf("Token inválido: ~\n");
 			break;
 		case INVALID_ESCAPE_SEQUENCE:
-			printf("Sequência de escape inválida: \\%c\n", next->str[0]);
+			int len = strlen(next->str);
+			printf("Sequência de escape inválida: \\%c\n", next->str[len - 1]);
+			break;
+		case UNTERMINATED_STRING:
+			printf("Cadeia de caracteres não encerrada\n");
+			break;
+		case UNTERMINATED_COMMENT:
+			printf("Comentário de múltiplas linhas não encerrado\n");
 			break;
 		}
 		next = next->next;
@@ -298,20 +306,19 @@ char *readFile(char *fileName)
 
 StateMachineOutput next_init(char *start, int token_len) {
 	StateMachineOutput out;
+	char c = start[token_len - 1];
 	
 	out.token = TOKEN_NONE;
-	
-	char c = start[token_len - 1];
 	
 	switch(c) {
 	case '=':
 		out.state = &state_eq;
 		break;
 	case '<':
-		out.state = &state_lt_0;
+		out.state = &state_lt;
 		break;
 	case '>':
-		out.state = &state_gt_0;
+		out.state = &state_gt;
 		break;
 	case '~':
 		out.state = &state_ne_0;
@@ -373,12 +380,11 @@ StateMachineOutput next_ne_0(char *start, int token_len) {
 	if (c != '=') {
 		out.state = &state_init;
 		error_list_insert(INVALID_TOKEN, start, token_len);
-		out.token = TOKEN_SKIP;
 	}
 	else {
 		out.state = &state_ne_1;
-		out.token = TOKEN_NONE;
 	}
+	out.token = TOKEN_NONE;
 	
 	return out;
 }
@@ -393,24 +399,15 @@ StateMachineOutput next_ne_1(char *start, int token_len) {
 };
 
 
-StateMachineOutput next_lt_0(char *start, int token_len) {
+StateMachineOutput next_lt(char *start, int token_len) {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
 	
 	out.state = (c == '=') ? &state_le : &state_op_delim;
-	
 	out.token = TOKEN_NONE;
+	
 	return out;
 }
-
-StateMachineOutput next_lt_1(char *start, int token_len) {
-	StateMachineOutput out = {
-		.token.class = LT,
-		.token.len = 1
-	};
-	
-	return out;
-};
 
 StateMachineOutput next_le(char *start, int token_len) {
 	StateMachineOutput out = {
@@ -421,24 +418,15 @@ StateMachineOutput next_le(char *start, int token_len) {
 	return out;
 };
 
-StateMachineOutput next_gt_0(char *start, int token_len) {
+StateMachineOutput next_gt(char *start, int token_len) {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
 	
-	out.state = (c == '=') ? &state_ge : &state_gt_1;
-	
+	out.state = (c == '=') ? &state_ge : &state_op_delim;
 	out.token = TOKEN_NONE;
+	
 	return out;
 }
-
-StateMachineOutput next_gt_1(char *start, int token_len) {
-	StateMachineOutput out = {
-		.token.class = GT,
-		.token.len = 1
-	};
-	
-	return out;
-};
 
 StateMachineOutput next_ge(char *start, int token_len) {
 	StateMachineOutput out = {
@@ -479,8 +467,8 @@ StateMachineOutput next_num_1(char *start, int token_len) {
 	char c = start[token_len - 1];
 	
 	out.state = is_digit(c) ? &state_num_1 : &state_num_2;
-	
 	out.token = TOKEN_NONE;
+	
 	return out;
 }
 
@@ -501,8 +489,8 @@ StateMachineOutput next_id_0(char *start, int token_len) {
 	char c = start[token_len - 1];
 	
 	out.state = (isalnum(c) || c == '_') ? &state_id_0 : &state_id_1;
-	
 	out.token = TOKEN_NONE;
+	
 	return out;
 }
 
@@ -522,6 +510,12 @@ StateMachineOutput next_str_0(char *start, int token_len) {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
 	
+	if (c == '\0') {
+		out.state = &state_init;
+		error_list_insert(UNTERMINATED_STRING, start, token_len - 1);
+		return out;
+	}
+	
 	if (c == '"')
 		out.state = &state_str_2;
 	else if (c == '\\')
@@ -537,9 +531,15 @@ StateMachineOutput next_str_1(char *start, int token_len) {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
 	
-	if (strchr("abfnrtv\\", c) == NULL) {
+	if (c == '\0') {
 		out.state = &state_init;
-		out.token = TOKEN_NONE;
+		error_list_insert(UNTERMINATED_STRING, start, token_len - 1);
+		return out;
+	}
+	
+	if (strchr("abfnrtv\\\"", c) == NULL) {
+		out.state = &state_str_3;
+		out.token = TOKEN_SKIP;
 		error_list_insert(INVALID_ESCAPE_SEQUENCE, start, token_len);
 	}
 	else {
@@ -562,6 +562,47 @@ StateMachineOutput next_str_2(char *start, int token_len) {
 	return out;
 };
 
+StateMachineOutput next_str_3(char *start, int token_len) {
+	StateMachineOutput out;
+	char c = start[token_len - 1];
+	
+	if (c == '\0') {
+		out.state = &state_init;
+		error_list_insert(UNTERMINATED_STRING, start, token_len - 1);
+		return out;
+	}
+	
+	if (c == '"')
+		out.state = &state_init;
+	else if (c == '\\')
+		out.state = &state_str_4;
+	else
+		out.state = &state_str_3;
+	
+	out.token = TOKEN_SKIP;
+	
+	return out;
+}
+
+StateMachineOutput next_str_4(char *start, int token_len) {
+	StateMachineOutput out;
+	char c = start[token_len - 1];
+	
+	if (c == '\0') {
+		out.state = &state_init;
+		error_list_insert(UNTERMINATED_STRING, start, token_len - 1);
+		return out;
+	}
+	
+	if (strchr("abfnrtv\\\"", c) == NULL)
+		error_list_insert(INVALID_ESCAPE_SEQUENCE, start, token_len);
+	
+	out.state = &state_str_3;
+	out.token = TOKEN_SKIP;
+
+	return out;
+}
+
 StateMachineOutput next_cmt_0(char *start, int token_len) {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
@@ -569,7 +610,7 @@ StateMachineOutput next_cmt_0(char *start, int token_len) {
 	if (c != '-') {
 		out.state = &state_op_delim;
 		out.token = TOKEN_NONE;
-	return out;
+		return out;
 	}
 	
 	out.state = &state_cmt_1;
@@ -582,7 +623,7 @@ StateMachineOutput next_cmt_1(char *start, int token_len) {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
 	
-	if (c == '\n')
+	if (c == '\n' || c == '\0') 
 		out.state = &state_init;
 	else if (c == '[')
 		out.state = &state_cmt_2;
@@ -614,8 +655,13 @@ StateMachineOutput next_cmt_3(char *start, int token_len) {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
 	
-	out.state = (c != ']') ? &state_cmt_3 : &state_cmt_4;
+	if (c == '\0') {
+		out.state = &state_init;
+		error_list_insert(UNTERMINATED_COMMENT, start, token_len - 1);
+		return out;
+	}
 	
+	out.state = (c != ']') ? &state_cmt_3 : &state_cmt_4;
 	out.token = TOKEN_SKIP;
 	
 	return out;
@@ -625,8 +671,13 @@ StateMachineOutput next_cmt_4(char *start, int token_len) {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
 	
-	out.state = (c != ']') ? &state_cmt_3 : &state_init;
+	if (c == '\0') {
+		out.state = &state_init;
+		error_list_insert(UNTERMINATED_COMMENT, start, token_len - 1);
+		return out;
+	}
 	
+	out.state = (c != ']') ? &state_cmt_3 : &state_init;
 	out.token = TOKEN_SKIP;
 	
 	return out;
@@ -637,12 +688,10 @@ StateMachineOutput next_cmt_5(char *start, int token_len) {
 	char c = start[token_len - 1];
 	
 	out.state = (c != '\n') ? &state_cmt_5 : &state_init;
-	
 	out.token = TOKEN_SKIP;
 	
 	return out;
 }
-
 
 void state_machine_init(void) {
 	state_init.next = next_init;
@@ -654,12 +703,10 @@ void state_machine_init(void) {
 	state_ne_0.next = next_ne_0;
 	state_ne_1.next = next_ne_1;
 	
-	state_lt_0.next = next_lt_0;
-	state_lt_1.next = next_lt_1;
+	state_lt.next = next_lt;
 	state_le.next = next_le;
 	
-	state_gt_0.next = next_gt_0;
-	state_gt_1.next = next_gt_1;
+	state_gt.next = next_gt;
 	state_ge.next = next_ge;
 	
 	state_op_delim.next = next_op_delim;
@@ -674,6 +721,8 @@ void state_machine_init(void) {
 	state_str_0.next = next_str_0;
 	state_str_1.next = next_str_1;
 	state_str_2.next = next_str_2;
+	state_str_3.next = next_str_3;
+	state_str_4.next = next_str_4;
 	
 	state_cmt_0.next = next_cmt_0;
 	state_cmt_1.next = next_cmt_1;

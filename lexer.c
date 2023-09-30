@@ -14,10 +14,9 @@ enum TokenClasses {
 	NONE = 0,
 	DEQ = 256,
 	NE,
-	LT,
 	LE,
-	GT,
 	GE,
+	CAT,
 	OP_DELIM,
 	NUM,
 	ID,
@@ -84,6 +83,9 @@ State
 	
 	state_gt,
 	state_ge,
+	
+	state_dot,
+	state_cat,
 	
 	state_op_delim,
 	
@@ -258,17 +260,14 @@ void print_token(Token token) {
 	case NE:
 		printf("<nome-token: '~='>\n");
 		break;
-	case LT:
-		printf("<nome-token: '<'>\n");
-		break;
 	case LE:
 		printf("<nome-token: '<='>\n");
 		break;
-	case GT:
-		printf("<nome-token: '>'>\n");
-		break;
 	case GE:
 		printf("<nome-token: '>='>\n");
+		break;
+	case CAT:
+		printf("<nome-token: '..'>\n");
 		break;
 	case OP_DELIM:
 		printf("<nome-token: '%c'>\n", token.str[0]);
@@ -332,6 +331,9 @@ StateMachineOutput next_init(char *start, int token_len) {
 		break;
 	case '~':
 		out.state = &state_ne_0;
+		break;
+	case '.':
+		out.state = &state_dot;
 		break;
 	case '"':
 		out.state = &state_str_0;
@@ -441,6 +443,25 @@ StateMachineOutput next_gt(char *start, int token_len) {
 StateMachineOutput next_ge(char *start, int token_len) {
 	StateMachineOutput out = {
 		.token.class = GE,
+		.token.len = 2
+	};
+	
+	return out;
+};
+
+StateMachineOutput next_dot(char *start, int token_len) {
+	StateMachineOutput out;
+	char c = start[token_len - 1];
+	
+	out.state = (c == '.') ? &state_cat : &state_op_delim;
+	out.token = TOKEN_NONE;
+	
+	return out;
+}
+
+StateMachineOutput next_cat(char *start, int token_len) {
+	StateMachineOutput out = {
+		.token.class = CAT,
 		.token.len = 2
 	};
 	
@@ -747,6 +768,9 @@ void state_machine_init(void) {
 	
 	state_gt.next = next_gt;
 	state_ge.next = next_ge;
+	
+	state_dot.next = next_dot;
+	state_cat.next = next_cat;
 	
 	state_op_delim.next = next_op_delim;
 	

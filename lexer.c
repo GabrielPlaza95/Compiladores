@@ -24,14 +24,21 @@ enum TokenClasses {
 	STRING,
 };
 
+
+enum ErrorClasses {
+	INVALID_CHARACTER,
+	INVALID_TOKEN,
+	INVALID_ESCAPE_SEQUENCE
+};
+
+struct state;
+
 typedef struct {
 	int class;
 	int len;
 	char *str;
 }
 Token;
-
-struct state;
 
 typedef struct {
 	Token token;
@@ -51,8 +58,16 @@ typedef struct symbol_table_node {
 }
 SymbolTableNode;
 
+typedef struct error_list_node {
+	int error_class;
+	char *str;
+	struct error_list_node *next;
+}
+ErrorListNode;
+
 State
 	state_init,
+	state_error,
 	
 	state_eq,
 	
@@ -90,8 +105,7 @@ State
 	state_cmt_5;
 
 SymbolTableNode *symbol_table = NULL;
-
-//char erro[] = "Token inválido: ";
+ErrorListNode *error_list = NULL;
 
 char *reserved_id_list[RESERVED_ID_N] = {
 	"do",
@@ -118,30 +132,88 @@ char *reserved_id_list[RESERVED_ID_N] = {
 };
 
 char *symbol_table_insert(char *symbol, int len) {
-	SymbolTableNode *next = symbol_table;
+	SymbolTableNode *root = symbol_table;
+	SymbolTableNode *next;
 	
-	if (next == NULL) {
-		next = malloc(sizeof *next);
-		next->left = NULL;
-		next->right = NULL;
-	}
-	
-	while (next != NULL && next->symbol != NULL) {
-		int cmp = strncmp(symbol, next->symbol, len);
-		int next_len = strlen(next->symbol);
-		
-		if (cmp == 0 && len == next_len)
-			return(next->symbol);
-	
-		next = ((cmp == 0 && len < next_len) || cmp < 0 ) ? next->left : next->right;
-	}
-	
+	next = malloc(sizeof *next);
+	next->left = NULL;
+	next->right = NULL;
 	next->symbol = malloc(len + 1);
 	next->symbol[len + 1] = '\0';
-	
 	strncpy(next->symbol, symbol, len);
 	
+	if (symbol_table == NULL) {
+		symbol_table = next;
+		return symbol_table->symbol;
+	}
+	
+	while (true) {
+		int cmp = strncmp(symbol, root->symbol, len);
+		int root_len = strlen(root->symbol);
+		
+		if (cmp == 0 && len == root_len) {
+			free(next);
+			return(root->symbol);
+		}
+		
+		if (cmp < 0 || (cmp == 0 && len < root_len)) {
+			if (root->left == NULL) {
+				root->left = next;
+				break;
+			}
+			root = root->left;
+		}
+		else if (root->right == NULL) {
+			root->right = next;
+			break;
+		}
+		else {
+			root = root->right;
+		}
+	}
 	return next->symbol;
+}
+
+void error_list_insert(int error_class, char *start, int token_len) {
+	ErrorListNode *head = error_list;
+	ErrorListNode *next;
+	
+	next = malloc(sizeof *next);
+	next->next = NULL;
+	next->error_class = error_class;
+	next->str = malloc(token_len);
+	next->str[token_len] = '\0';
+	strncpy(next->str, start, token_len);
+	
+	if (error_list == NULL) {
+		error_list = next;
+		return;
+	}
+	
+	while (head->next != NULL) {
+		head = head->next;
+	}
+	head->next = next;
+}
+
+void print_errors(void) {
+	ErrorListNode *next = error_list;
+	
+	while (next != NULL) {
+		
+		switch (next->error_class) {
+		case INVALID_CHARACTER:
+			printf("Caractere inválido: %c\n", next->str[0]);
+			break;
+		case INVALID_TOKEN:
+			printf("Token inválido: ~\n");
+			break;
+		case INVALID_ESCAPE_SEQUENCE:
+			printf("Sequência de escape inválida: \\%c\n", next->str[0]);
+			break;
+		}
+		next = next->next;
+	}
 }
 
 bool is_digit(char c) {
@@ -166,32 +238,32 @@ void print_token(Token token) {
 	case NONE:
 		break;
 	case DEQ:
-		printf("<nome-token: '==', atributo: >\n");
+		printf("<nome-token: '=='>\n");
 		break;
 	case NE:
-		printf("<nome-token: '~=', atributo: >\n");
+		printf("<nome-token: '~='>\n");
 		break;
 	case LT:
-		printf("<nome-token: '<', atributo: >\n");
+		printf("<nome-token: '<'>\n");
 		break;
 	case LE:
-		printf("<nome-token: '<=', atributo: >\n");
+		printf("<nome-token: '<='>\n");
 		break;
 	case GT:
-		printf("<nome-token: '>', atributo: >\n");
+		printf("<nome-token: '>'>\n");
 		break;
 	case GE:
-		printf("<nome-token: '>=', atributo: >\n");
+		printf("<nome-token: '>='>\n");
 		break;
 	case OP_DELIM:
-		printf("<nome-token: '%c', atributo: >\n", token.str[0]);
+		printf("<nome-token: '%c'>\n", token.str[0]);
 		break;
 	case NUM:
 		printf("<nome-token: NUM, atributo: %s>\n", token.str);
 		break;
 	case ID:
 		if (is_reserved_id(token.str))
-			printf("<nome-token: '%s', atributo: >\n", token.str);
+			printf("<nome-token: '%s'>\n", token.str);
 		else
 			printf("<nome-token: ID, atributo: %s>\n", token.str);
 		break;
@@ -266,17 +338,9 @@ StateMachineOutput next_init(char *start, int token_len) {
 		}
 		else {
 			out.state = &state_init;
+			error_list_insert(INVALID_CHARACTER, start, token_len);
 		}
 	}
-	
-	return out;
-}
-
-StateMachineOutput next_error(char *start, int token_len) {
-	StateMachineOutput out;
-	
-	out.state = &state_init;
-	out.token = TOKEN_SKIP;
 	
 	return out;
 }
@@ -306,8 +370,15 @@ StateMachineOutput next_ne_0(char *start, int token_len) {
 	
 	char c = start[token_len - 1];
 	
-	out.state = (c == '=') ? &state_ne_1 : &state_init; //ERRO
-	out.token = TOKEN_NONE;
+	if (c != '=') {
+		out.state = &state_init;
+		error_list_insert(INVALID_TOKEN, start, token_len);
+		out.token = TOKEN_SKIP;
+	}
+	else {
+		out.state = &state_ne_1;
+		out.token = TOKEN_NONE;
+	}
 	
 	return out;
 }
@@ -466,9 +537,16 @@ StateMachineOutput next_str_1(char *start, int token_len) {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
 	
-	out.state = (strchr("abfnrtv\\", c) != NULL) ? &state_str_0 : &state_init; // ERRO
-	out.token = TOKEN_NONE;
-	
+	if (strchr("abfnrtv\\", c) == NULL) {
+		out.state = &state_init;
+		out.token = TOKEN_NONE;
+		error_list_insert(INVALID_ESCAPE_SEQUENCE, start, token_len);
+	}
+	else {
+		out.state = &state_str_0;
+		out.token = TOKEN_NONE;
+	}
+
 	return out;
 }
 
@@ -610,7 +688,7 @@ void symbol_table_init(void) {
 		symbol_table_insert(reserved_id_list[i], strlen(reserved_id_list[i]));
 }
 
-StateMachineOutput proximo_token(char **start)
+StateMachineOutput next_token(char **start)
 {
 	StateMachineOutput out;
 	char c;
@@ -643,7 +721,7 @@ StateMachineOutput proximo_token(char **start)
 	return(out);
 }
 
-int main ()
+int main(void)
 {
 	state_machine_init();
 	symbol_table_init();
@@ -653,8 +731,10 @@ int main ()
 	char *code = readFile("programa.txt");
 	
 	do {
-		out = proximo_token(&code);
+		out = next_token(&code);
 		print_token(out.token);
 	}
 	while (out.token.class != NONE);
+	
+	print_errors();
 }

@@ -1,6 +1,0 @@
-ab = --[
-1.2 + 4 < x
-if (2 < 5 == !true) then
-    local arr = {2, 3 , 4}
-    arr[0] = 5;
-end

@@ -61,6 +61,7 @@ typedef struct symbol_table_node {
 SymbolTableNode;
 
 typedef struct error_list_node {
+	int line;
 	int error_class;
 	char *str;
 	struct error_list_node *next;
@@ -106,9 +107,6 @@ State
 	state_cmt_4,
 	state_cmt_5;
 
-SymbolTableNode *symbol_table = NULL;
-ErrorListNode *error_list = NULL;
-
 char *reserved_id_list[RESERVED_ID_N] = {
 	"do",
 	"if",
@@ -132,6 +130,12 @@ char *reserved_id_list[RESERVED_ID_N] = {
 	"return",
 	"function"
 };
+
+SymbolTableNode *symbol_table = NULL;
+ErrorListNode *error_list = NULL;
+
+bool error_flag = false;
+int current_line = 1;
 
 char *symbol_table_insert(char *symbol, int len) {
 	SymbolTableNode *root = symbol_table;
@@ -180,9 +184,12 @@ void error_list_insert(int error_class, char *start, int token_len) {
 	ErrorListNode *head = error_list;
 	ErrorListNode *next;
 	
+	error_flag = true;
+	
 	next = malloc(sizeof *next);
 	next->next = NULL;
 	next->error_class = error_class;
+	next->line = current_line;
 	next->str = malloc(token_len);
 	next->str[token_len] = '\0';
 	strncpy(next->str, start, token_len);
@@ -204,20 +211,20 @@ void print_errors(void) {
 	while (next != NULL) {
 		switch (next->error_class) {
 		case INVALID_CHARACTER:
-			printf("Caractere inválido: %c\n", next->str[0]);
+			printf("Caractere inválido '%c' na linha %i\n", next->str[0], next->line);
 			break;
 		case INVALID_TOKEN:
-			printf("Token inválido: ~\n");
+			printf("Token inválido ~ na linha %i\n", next->line);
 			break;
 		case INVALID_ESCAPE_SEQUENCE:
 			int len = strlen(next->str);
-			printf("Sequência de escape inválida: \\%c\n", next->str[len - 1]);
+			printf("Sequência de escape inválida \\%c na linha %i\n", next->str[len - 1], next->line);
 			break;
 		case UNTERMINATED_STRING:
-			printf("Cadeia de caracteres não encerrada\n");
+			printf("Cadeia de caracteres na linha %i e não encerrada\n", next->line);
 			break;
 		case UNTERMINATED_COMMENT:
-			printf("Comentário de múltiplas linhas não encerrado\n");
+			printf("Comentário de múltiplas linhas aberto na linha %i e não encerrado\n", next->line);
 			break;
 		}
 		next = next->next;
@@ -309,6 +316,9 @@ StateMachineOutput next_init(char *start, int token_len) {
 	char c = start[token_len - 1];
 	
 	out.token = TOKEN_NONE;
+	
+	if (c == '\n')
+		current_line++;
 	
 	switch(c) {
 	case '=':
@@ -510,6 +520,9 @@ StateMachineOutput next_str_0(char *start, int token_len) {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
 	
+	if (c == '\n')
+		current_line++;
+	
 	if (c == '\0') {
 		out.state = &state_init;
 		error_list_insert(UNTERMINATED_STRING, start, token_len - 1);
@@ -530,6 +543,9 @@ StateMachineOutput next_str_0(char *start, int token_len) {
 StateMachineOutput next_str_1(char *start, int token_len) {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
+	
+	if (c == '\n')
+		current_line++;
 	
 	if (c == '\0') {
 		out.state = &state_init;
@@ -566,6 +582,9 @@ StateMachineOutput next_str_3(char *start, int token_len) {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
 	
+	if (c == '\n')
+		current_line++;
+	
 	if (c == '\0') {
 		out.state = &state_init;
 		error_list_insert(UNTERMINATED_STRING, start, token_len - 1);
@@ -587,6 +606,9 @@ StateMachineOutput next_str_3(char *start, int token_len) {
 StateMachineOutput next_str_4(char *start, int token_len) {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
+	
+	if (c == '\n')
+		current_line++;
 	
 	if (c == '\0') {
 		out.state = &state_init;
@@ -623,13 +645,16 @@ StateMachineOutput next_cmt_1(char *start, int token_len) {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
 	
-	if (c == '\n' || c == '\0') 
+	if (c == '\n' || c == '\0') { 
 		out.state = &state_init;
-	else if (c == '[')
+		current_line++;
+	}
+	else if (c == '[') {
 		out.state = &state_cmt_2;
-	else
+	}
+	else {
 		out.state = &state_cmt_5;
-	
+	}
 	out.token = TOKEN_SKIP;
 	
 	return out;
@@ -639,13 +664,16 @@ StateMachineOutput next_cmt_2(char *start, int token_len) {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
 	
-	if (c == '\n')
+	if (c == '\n') {
 		out.state = &state_init;
-	else if (c == '[')
+		current_line++;
+	}
+	else if (c == '[') {
 		out.state = &state_cmt_3;
-	else
+	}
+	else {
 		out.state = &state_cmt_5;
-	
+	}
 	out.token = TOKEN_SKIP;
 	
 	return out;
@@ -654,6 +682,9 @@ StateMachineOutput next_cmt_2(char *start, int token_len) {
 StateMachineOutput next_cmt_3(char *start, int token_len) {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
+	
+	if (c == '\n')
+		current_line++;
 	
 	if (c == '\0') {
 		out.state = &state_init;
@@ -671,6 +702,9 @@ StateMachineOutput next_cmt_4(char *start, int token_len) {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
 	
+	if (c == '\n')
+		current_line++;
+	
 	if (c == '\0') {
 		out.state = &state_init;
 		error_list_insert(UNTERMINATED_COMMENT, start, token_len - 1);
@@ -687,7 +721,12 @@ StateMachineOutput next_cmt_5(char *start, int token_len) {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
 	
-	out.state = (c != '\n') ? &state_cmt_5 : &state_init;
+	if (c == '\n') {
+		out.state = &state_init;
+		current_line++;
+	} else {
+		out.state = &state_cmt_5;
+	}
 	out.token = TOKEN_SKIP;
 	
 	return out;
@@ -770,18 +809,20 @@ StateMachineOutput next_token(char **start)
 	return(out);
 }
 
-int main(void)
+int main(int argc, char *argv[])
 {
 	state_machine_init();
 	symbol_table_init();
 	
 	StateMachineOutput out;
 	
-	char *code = readFile("programa.txt");
+	char *code = readFile(argv[1]);
 	
 	do {
 		out = next_token(&code);
-		print_token(out.token);
+		
+		if (error_flag == false)
+			print_token(out.token);
 	}
 	while (out.token.class != NONE);
 	

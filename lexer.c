@@ -213,20 +213,20 @@ void print_errors(void) {
 	while (next != NULL) {
 		switch (next->error_class) {
 		case INVALID_CHARACTER:
-			printf("Caractere inválido '%c' na linha %i\n", next->str[0], next->line);
+			fprintf(stderr, "Caractere inválido '%c' na linha %i\n", next->str[0], next->line);
 			break;
 		case INVALID_TOKEN:
-			printf("Token inválido ~ na linha %i\n", next->line);
+			fprintf(stderr, "Token inválido ~ na linha %i\n", next->line);
 			break;
 		case INVALID_ESCAPE_SEQUENCE:
 			int len = strlen(next->str);
-			printf("Sequência de escape inválida \\%c na linha %i\n", next->str[len - 1], next->line);
+			fprintf(stderr, "Sequência de escape inválida \\%c na linha %i\n", next->str[len - 1], next->line);
 			break;
 		case UNTERMINATED_STRING:
-			printf("Cadeia de caracteres na linha %i e não encerrada\n", next->line);
+			fprintf(stderr, "Cadeia de caracteres na linha %i e não encerrada\n", next->line);
 			break;
 		case UNTERMINATED_COMMENT:
-			printf("Comentário de múltiplas linhas aberto na linha %i e não encerrado\n", next->line);
+			fprintf(stderr, "Comentário de múltiplas linhas aberto na linha %i e não encerrado\n", next->line);
 			break;
 		}
 		next = next->next;
@@ -839,6 +839,11 @@ int main(int argc, char *argv[])
 	symbol_table_init();
 	
 	StateMachineOutput out;
+	
+	if (argv[1] == NULL) {
+		fprintf(stderr, "Erro: arquivo para leitura deve ser informado\n");
+		exit(-1);
+	}
 	
 	char *code = readFile(argv[1]);
 	

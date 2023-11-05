@@ -9,7 +9,7 @@
 
 #define RESERVED_ID_N 21
 
-enum TokenClasses {
+typedef enum {
 	SKIP = -1,
 	NONE = 0,
 	DEQ = 256,
@@ -20,37 +20,26 @@ enum TokenClasses {
 	OP_DELIM,
 	NUM,
 	ID,
-	STRING,
-};
+	STRING
+}
+TokenClass;
 
 
-enum ErrorClasses {
+typedef enum {
 	INVALID_CHARACTER,
 	INVALID_TOKEN,
 	INVALID_ESCAPE_SEQUENCE,
 	UNTERMINATED_STRING,
 	UNTERMINATED_COMMENT
-};
-
-struct state;
+}
+ErrorClass;
 
 typedef struct {
-	int class;
+	TokenClass class;
 	int len;
 	char *str;
 }
 Token;
-
-typedef struct {
-	Token token;
-	struct state *state;
-}
-StateMachineOutput;
-
-typedef struct state {
-	StateMachineOutput (*next)(char *start, int token_len);
-}
-State;
 
 typedef struct symbol_table_node {
 	struct symbol_table_node *left;
@@ -61,53 +50,28 @@ SymbolTableNode;
 
 typedef struct error_list_node {
 	int line;
-	int error_class;
+	ErrorClass error_class;
 	char *str;
 	struct error_list_node *next;
 }
 ErrorListNode;
 
-State
-	state_init,
-	state_error,
+typedef struct {
+	SymbolTableNode *symbol_table;
+	ErrorListNode *error_list;
 
-	state_eq,
+	bool error_flag;
+	int current_line;
+}
+Lexer;
 
-	state_deq,
+typedef struct state_machine_output State(Lexer *lexer, char *start, int token_len);
 
-	state_ne_0,
-	state_ne_1,
-
-	state_lt,
-	state_le,
-
-	state_gt,
-	state_ge,
-
-	state_dot,
-	state_cat,
-
-	state_op_delim,
-
-	state_num_0,
-	state_num_1,
-	state_num_2,
-
-	state_id_0,
-	state_id_1,
-
-	state_str_0,
-	state_str_1,
-	state_str_2,
-	state_str_3,
-	state_str_4,
-
-	state_cmt_0,
-	state_cmt_1,
-	state_cmt_2,
-	state_cmt_3,
-	state_cmt_4,
-	state_cmt_5;
+typedef struct state_machine_output {
+	Token token;
+	State *state;
+}
+StateMachineOutput;
 
 char *reserved_id_list[RESERVED_ID_N] = {
 	"do",
@@ -133,15 +97,47 @@ char *reserved_id_list[RESERVED_ID_N] = {
 	"function"
 };
 
-SymbolTableNode *symbol_table = NULL;
-ErrorListNode *error_list = NULL;
+State state_init;
+State state_error;
 
-bool error_flag = false;
-int current_line = 1;
+State state_eq;
+State state_deq;
 
-char *symbol_table_insert(char *symbol, int len)
+State state_ne_0;
+State state_ne_1;
+State state_lt;
+State state_le;
+State state_gt;
+State state_ge;
+
+State state_dot;
+State state_cat;
+
+State state_op_delim;
+
+State state_num_0;
+State state_num_1;
+State state_num_2;
+
+State state_id_0;
+State state_id_1;
+
+State state_str_0;
+State state_str_1;
+State state_str_2;
+State state_str_3;
+State state_str_4;
+
+State state_cmt_0;
+State state_cmt_1;
+State state_cmt_2;
+State state_cmt_3;
+State state_cmt_4;
+State state_cmt_5;
+
+char *symbol_table_insert(Lexer *lexer, char *symbol, int len)
 {
-	SymbolTableNode *root = symbol_table;
+	SymbolTableNode *root = lexer->symbol_table;
 	SymbolTableNode *next;
 
 	next = malloc(sizeof *next);
@@ -151,9 +147,9 @@ char *symbol_table_insert(char *symbol, int len)
 	next->symbol[len + 1] = '\0';
 	strncpy(next->symbol, symbol, len);
 
-	if (symbol_table == NULL) {
-		symbol_table = next;
-		return symbol_table->symbol;
+	if (lexer->symbol_table == NULL) {
+		lexer->symbol_table = next;
+		return lexer->symbol_table->symbol;
 	}
 
 	while (true) {
@@ -183,23 +179,29 @@ char *symbol_table_insert(char *symbol, int len)
 	return next->symbol;
 }
 
-void error_list_insert(int error_class, char *start, int token_len)
+void symbol_table_init(Lexer *lexer)
 {
-	ErrorListNode *head = error_list;
+	for (int i = 0; i < RESERVED_ID_N; i++)
+		symbol_table_insert(lexer, reserved_id_list[i], strlen(reserved_id_list[i]));
+}
+
+void error_list_insert(Lexer *lexer, ErrorClass error_class, char *start, int token_len)
+{
+	ErrorListNode *head = lexer->error_list;
 	ErrorListNode *next;
 
-	error_flag = true;
+	lexer->error_flag = true;
 
 	next = malloc(sizeof *next);
 	next->next = NULL;
 	next->error_class = error_class;
-	next->line = current_line;
+	next->line = lexer->current_line;
 	next->str = malloc(token_len);
 	next->str[token_len] = '\0';
 	strncpy(next->str, start, token_len);
 
-	if (error_list == NULL) {
-		error_list = next;
+	if (lexer->error_list == NULL) {
+		lexer->error_list = next;
 		return;
 	}
 
@@ -208,9 +210,24 @@ void error_list_insert(int error_class, char *start, int token_len)
 	head->next = next;
 }
 
-void print_errors(void)
+Lexer lexer_init(void)
 {
-	ErrorListNode *next = error_list;
+	Lexer lexer = {
+		.symbol_table = NULL,
+		.error_list = NULL,
+
+		.error_flag = false,
+		.current_line = 1,
+	};
+
+	symbol_table_init(&lexer);
+
+	return lexer;
+}
+
+void print_errors(Lexer *lexer)
+{
+	ErrorListNode *next = lexer->error_list;
 
 	while (next != NULL) {
 		switch (next->error_class) {
@@ -258,6 +275,7 @@ void print_token(Token token)
 {
 	switch (token.class) {
 	case NONE:
+	case SKIP:
 		break;
 	case DEQ:
 		printf("<nome-token: '=='>\n");
@@ -314,7 +332,7 @@ char *read_file(char *file_name)
 	return code;
 }
 
-StateMachineOutput next_init(char *start, int token_len)
+StateMachineOutput state_init(Lexer *lexer, char *start, int token_len)
 {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
@@ -322,7 +340,7 @@ StateMachineOutput next_init(char *start, int token_len)
 	out.token = TOKEN_NONE;
 
 	if (c == '\n')
-		current_line++;
+		lexer->current_line++;
 
 	switch (c) {
 	case '=':
@@ -362,14 +380,14 @@ StateMachineOutput next_init(char *start, int token_len)
 		}
 		else {
 			out.state = &state_init;
-			error_list_insert(INVALID_CHARACTER, start, token_len);
+			error_list_insert(lexer, INVALID_CHARACTER, start, token_len);
 		}
 	}
 
 	return out;
 }
 
-StateMachineOutput next_eq(char *start, int token_len)
+StateMachineOutput state_eq(Lexer *lexer, char *start, int token_len)
 {
 	StateMachineOutput out;
 
@@ -381,7 +399,7 @@ StateMachineOutput next_eq(char *start, int token_len)
 	return out;
 }
 
-StateMachineOutput next_deq(char *start, int token_len)
+StateMachineOutput state_deq(Lexer *lexer, char *start, int token_len)
 {
 	StateMachineOutput out = {
 		.token.class = DEQ,
@@ -391,7 +409,7 @@ StateMachineOutput next_deq(char *start, int token_len)
 	return out;
 };
 
-StateMachineOutput next_ne_0(char *start, int token_len)
+StateMachineOutput state_ne_0(Lexer *lexer, char *start, int token_len)
 {
 	StateMachineOutput out;
 
@@ -399,7 +417,7 @@ StateMachineOutput next_ne_0(char *start, int token_len)
 
 	if (c != '=') {
 		out.state = &state_init;
-		error_list_insert(INVALID_TOKEN, start, token_len);
+		error_list_insert(lexer, INVALID_TOKEN, start, token_len);
 	}
 	else {
 		out.state = &state_ne_1;
@@ -409,7 +427,7 @@ StateMachineOutput next_ne_0(char *start, int token_len)
 	return out;
 }
 
-StateMachineOutput next_ne_1(char *start, int token_len)
+StateMachineOutput state_ne_1(Lexer *lexer, char *start, int token_len)
 {
 	StateMachineOutput out = {
 		.token.class = NE,
@@ -420,7 +438,7 @@ StateMachineOutput next_ne_1(char *start, int token_len)
 };
 
 
-StateMachineOutput next_lt(char *start, int token_len)
+StateMachineOutput state_lt(Lexer *lexer, char *start, int token_len)
 {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
@@ -431,7 +449,7 @@ StateMachineOutput next_lt(char *start, int token_len)
 	return out;
 }
 
-StateMachineOutput next_le(char *start, int token_len)
+StateMachineOutput state_le(Lexer *lexer, char *start, int token_len)
 {
 	StateMachineOutput out = {
 		.token.class = LE,
@@ -441,7 +459,7 @@ StateMachineOutput next_le(char *start, int token_len)
 	return out;
 };
 
-StateMachineOutput next_gt(char *start, int token_len)
+StateMachineOutput state_gt(Lexer *lexer, char *start, int token_len)
 {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
@@ -452,7 +470,7 @@ StateMachineOutput next_gt(char *start, int token_len)
 	return out;
 }
 
-StateMachineOutput next_ge(char *start, int token_len)
+StateMachineOutput state_ge(Lexer *lexer, char *start, int token_len)
 {
 	StateMachineOutput out = {
 		.token.class = GE,
@@ -462,7 +480,7 @@ StateMachineOutput next_ge(char *start, int token_len)
 	return out;
 };
 
-StateMachineOutput next_dot(char *start, int token_len)
+StateMachineOutput state_dot(Lexer *lexer, char *start, int token_len)
 {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
@@ -473,7 +491,7 @@ StateMachineOutput next_dot(char *start, int token_len)
 	return out;
 }
 
-StateMachineOutput next_cat(char *start, int token_len)
+StateMachineOutput state_cat(Lexer *lexer, char *start, int token_len)
 {
 	StateMachineOutput out = {
 		.token.class = CAT,
@@ -483,7 +501,7 @@ StateMachineOutput next_cat(char *start, int token_len)
 	return out;
 };
 
-StateMachineOutput next_op_delim(char *start, int token_len)
+StateMachineOutput state_op_delim(Lexer *lexer, char *start, int token_len)
 {
 	StateMachineOutput out = {
 		.token.class = OP_DELIM,
@@ -494,7 +512,7 @@ StateMachineOutput next_op_delim(char *start, int token_len)
 	return out;
 };
 
-StateMachineOutput next_num_0(char *start, int token_len)
+StateMachineOutput state_num_0(Lexer *lexer, char *start, int token_len)
 {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
@@ -510,7 +528,7 @@ StateMachineOutput next_num_0(char *start, int token_len)
 	return out;
 }
 
-StateMachineOutput next_num_1(char *start, int token_len)
+StateMachineOutput state_num_1(Lexer *lexer, char *start, int token_len)
 {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
@@ -521,7 +539,7 @@ StateMachineOutput next_num_1(char *start, int token_len)
 	return out;
 }
 
-StateMachineOutput next_num_2(char *start, int token_len)
+StateMachineOutput state_num_2(Lexer *lexer, char *start, int token_len)
 {
 	StateMachineOutput out;
 
@@ -529,12 +547,12 @@ StateMachineOutput next_num_2(char *start, int token_len)
 
 	out.token.class = NUM;
 	out.token.len = token_len;
-	out.token.str = symbol_table_insert(start, out.token.len);
+	out.token.str = symbol_table_insert(lexer, start, out.token.len);
 
 	return out;
 };
 
-StateMachineOutput next_id_0(char *start, int token_len)
+StateMachineOutput state_id_0(Lexer *lexer, char *start, int token_len)
 {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
@@ -545,7 +563,7 @@ StateMachineOutput next_id_0(char *start, int token_len)
 	return out;
 }
 
-StateMachineOutput next_id_1(char *start, int token_len)
+StateMachineOutput state_id_1(Lexer *lexer, char *start, int token_len)
 {
 	StateMachineOutput out;
 
@@ -553,22 +571,22 @@ StateMachineOutput next_id_1(char *start, int token_len)
 
 	out.token.class = ID;
 	out.token.len = token_len;
-	out.token.str = symbol_table_insert(start, out.token.len);
+	out.token.str = symbol_table_insert(lexer, start, out.token.len);
 
 	return out;
 };
 
-StateMachineOutput next_str_0(char *start, int token_len)
+StateMachineOutput state_str_0(Lexer *lexer, char *start, int token_len)
 {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
 
 	if (c == '\n')
-		current_line++;
+		lexer->current_line++;
 
 	if (c == '\0') {
-		out.state = &state_init;
-		error_list_insert(UNTERMINATED_STRING, start, token_len - 1);
+		out.state = state_init;
+		error_list_insert(lexer, UNTERMINATED_STRING, start, token_len - 1);
 		return out;
 	}
 
@@ -583,24 +601,24 @@ StateMachineOutput next_str_0(char *start, int token_len)
 	return out;
 }
 
-StateMachineOutput next_str_1(char *start, int token_len)
+StateMachineOutput state_str_1(Lexer *lexer, char *start, int token_len)
 {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
 
 	if (c == '\n')
-		current_line++;
+		lexer->current_line++;
 
 	if (c == '\0') {
 		out.state = &state_init;
-		error_list_insert(UNTERMINATED_STRING, start, token_len - 1);
+		error_list_insert(lexer, UNTERMINATED_STRING, start, token_len - 1);
 		return out;
 	}
 
 	if (strchr("abfnrtv\\\"", c) == NULL) {
 		out.state = &state_str_3;
 		out.token = TOKEN_SKIP;
-		error_list_insert(INVALID_ESCAPE_SEQUENCE, start, token_len);
+		error_list_insert(lexer, INVALID_ESCAPE_SEQUENCE, start, token_len);
 	}
 	else {
 		out.state = &state_str_0;
@@ -610,7 +628,7 @@ StateMachineOutput next_str_1(char *start, int token_len)
 	return out;
 }
 
-StateMachineOutput next_str_2(char *start, int token_len)
+StateMachineOutput state_str_2(Lexer *lexer, char *start, int token_len)
 {
 	StateMachineOutput out;
 
@@ -618,22 +636,22 @@ StateMachineOutput next_str_2(char *start, int token_len)
 
 	out.token.class = STRING;
 	out.token.len = token_len;
-	out.token.str = symbol_table_insert(start, out.token.len);
+	out.token.str = symbol_table_insert(lexer, start, out.token.len);
 
 	return out;
 };
 
-StateMachineOutput next_str_3(char *start, int token_len)
+StateMachineOutput state_str_3(Lexer *lexer, char *start, int token_len)
 {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
 
 	if (c == '\n')
-		current_line++;
+		lexer->current_line++;
 
 	if (c == '\0') {
 		out.state = &state_init;
-		error_list_insert(UNTERMINATED_STRING, start, token_len - 1);
+		error_list_insert(lexer, UNTERMINATED_STRING, start, token_len - 1);
 		return out;
 	}
 
@@ -649,22 +667,22 @@ StateMachineOutput next_str_3(char *start, int token_len)
 	return out;
 }
 
-StateMachineOutput next_str_4(char *start, int token_len)
+StateMachineOutput state_str_4(Lexer *lexer, char *start, int token_len)
 {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
 
 	if (c == '\n')
-		current_line++;
+		lexer->current_line++;
 
 	if (c == '\0') {
 		out.state = &state_init;
-		error_list_insert(UNTERMINATED_STRING, start, token_len - 1);
+		error_list_insert(lexer, UNTERMINATED_STRING, start, token_len - 1);
 		return out;
 	}
 
 	if (strchr("abfnrtv\\\"", c) == NULL)
-		error_list_insert(INVALID_ESCAPE_SEQUENCE, start, token_len);
+		error_list_insert(lexer, INVALID_ESCAPE_SEQUENCE, start, token_len);
 
 	out.state = &state_str_3;
 	out.token = TOKEN_SKIP;
@@ -672,7 +690,7 @@ StateMachineOutput next_str_4(char *start, int token_len)
 	return out;
 }
 
-StateMachineOutput next_cmt_0(char *start, int token_len)
+StateMachineOutput state_cmt_0(Lexer *lexer, char *start, int token_len)
 {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
@@ -689,14 +707,14 @@ StateMachineOutput next_cmt_0(char *start, int token_len)
 	return out;
 }
 
-StateMachineOutput next_cmt_1(char *start, int token_len)
+StateMachineOutput state_cmt_1(Lexer *lexer, char *start, int token_len)
 {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
 
 	if (c == '\n' || c == '\0') {
 		out.state = &state_init;
-		current_line++;
+		lexer->current_line++;
 	}
 	else if (c == '[') {
 		out.state = &state_cmt_2;
@@ -709,14 +727,14 @@ StateMachineOutput next_cmt_1(char *start, int token_len)
 	return out;
 }
 
-StateMachineOutput next_cmt_2(char *start, int token_len)
+StateMachineOutput state_cmt_2(Lexer *lexer, char *start, int token_len)
 {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
 
 	if (c == '\n') {
 		out.state = &state_init;
-		current_line++;
+		lexer->current_line++;
 	}
 	else if (c == '[') {
 		out.state = &state_cmt_3;
@@ -729,17 +747,17 @@ StateMachineOutput next_cmt_2(char *start, int token_len)
 	return out;
 }
 
-StateMachineOutput next_cmt_3(char *start, int token_len)
+StateMachineOutput state_cmt_3(Lexer *lexer, char *start, int token_len)
 {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
 
 	if (c == '\n')
-		current_line++;
+		lexer->current_line++;
 
 	if (c == '\0') {
-		out.state = &state_init;
-		error_list_insert(UNTERMINATED_COMMENT, start, token_len - 1);
+		out.state = state_init;
+		error_list_insert(lexer, UNTERMINATED_COMMENT, start, token_len - 1);
 		return out;
 	}
 
@@ -749,17 +767,17 @@ StateMachineOutput next_cmt_3(char *start, int token_len)
 	return out;
 }
 
-StateMachineOutput next_cmt_4(char *start, int token_len)
+StateMachineOutput state_cmt_4(Lexer *lexer, char *start, int token_len)
 {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
 
 	if (c == '\n')
-		current_line++;
+		lexer->current_line++;
 
 	if (c == '\0') {
 		out.state = &state_init;
-		error_list_insert(UNTERMINATED_COMMENT, start, token_len - 1);
+		error_list_insert(lexer, UNTERMINATED_COMMENT, start, token_len - 1);
 		return out;
 	}
 
@@ -769,14 +787,14 @@ StateMachineOutput next_cmt_4(char *start, int token_len)
 	return out;
 }
 
-StateMachineOutput next_cmt_5(char *start, int token_len)
+StateMachineOutput state_cmt_5(Lexer *lexer, char *start, int token_len)
 {
 	StateMachineOutput out;
 	char c = start[token_len - 1];
 
 	if (c == '\n') {
 		out.state = &state_init;
-		current_line++;
+		lexer->current_line++;
 	}
 	else {
 		out.state = &state_cmt_5;
@@ -786,67 +804,18 @@ StateMachineOutput next_cmt_5(char *start, int token_len)
 	return out;
 }
 
-void state_machine_init(void)
-{
-	state_init.next = next_init;
-
-	state_eq.next = next_eq;
-
-	state_deq.next = next_deq;
-
-	state_ne_0.next = next_ne_0;
-	state_ne_1.next = next_ne_1;
-
-	state_lt.next = next_lt;
-	state_le.next = next_le;
-
-	state_gt.next = next_gt;
-	state_ge.next = next_ge;
-
-	state_dot.next = next_dot;
-	state_cat.next = next_cat;
-
-	state_op_delim.next = next_op_delim;
-
-	state_num_0.next = next_num_0;
-	state_num_1.next = next_num_1;
-	state_num_2.next = next_num_2;
-
-	state_id_0.next = next_id_0;
-	state_id_1.next = next_id_1;
-
-	state_str_0.next = next_str_0;
-	state_str_1.next = next_str_1;
-	state_str_2.next = next_str_2;
-	state_str_3.next = next_str_3;
-	state_str_4.next = next_str_4;
-
-	state_cmt_0.next = next_cmt_0;
-	state_cmt_1.next = next_cmt_1;
-	state_cmt_2.next = next_cmt_2;
-	state_cmt_3.next = next_cmt_3;
-	state_cmt_4.next = next_cmt_4;
-	state_cmt_5.next = next_cmt_5;
-}
-
-void symbol_table_init(void)
-{
-	for (int i = 0; i < RESERVED_ID_N; i++)
-		symbol_table_insert(reserved_id_list[i], strlen(reserved_id_list[i]));
-}
-
-StateMachineOutput next_token(char **start)
+StateMachineOutput next_token(Lexer *lexer, char **start)
 {
 	StateMachineOutput out;
 	char c;
 	int token_len = 0;
 
-	State* current_state = &state_init;
+	State *current_state = &state_init;
 
 	while ((c = (*start)[token_len++]) != '\0' || current_state != &state_init) {
 		//printf("\nstart: %c\ncurrent: %c\nlen: %i\n", **start, c, token_len);
 
-		out = current_state->next(*start, token_len);
+		out = current_state(lexer, *start, token_len);
 
 		current_state = out.state;
 
@@ -870,8 +839,7 @@ StateMachineOutput next_token(char **start)
 
 int main(int argc, char *argv[])
 {
-	state_machine_init();
-	symbol_table_init();
+	Lexer lexer = lexer_init();
 
 	StateMachineOutput out;
 
@@ -881,14 +849,19 @@ int main(int argc, char *argv[])
 	}
 
 	char *code = read_file(argv[1]);
+	
+	if (code == NULL) {
+		fprintf(stderr, "Erro: arquivo não encontrado\n");
+		exit(-1);
+	}
 
 	do {
-		out = next_token(&code);
+		out = next_token(&lexer, &code);
 
-		if (error_flag == false)
+		if (lexer.error_flag == false)
 			print_token(out.token);
 	}
 	while (out.token.class != NONE);
 
-	print_errors();
+	print_errors(&lexer);
 }

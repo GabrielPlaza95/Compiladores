@@ -1,29 +1,12 @@
+#include "lexer.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include <ctype.h>
 #include <string.h>
 
-#define TOKEN_NONE (Token) { 0 }
-#define TOKEN_SKIP (Token) { SKIP, 0 }
-
 #define RESERVED_ID_N 21
-
-typedef enum {
-	SKIP = -1,
-	NONE = 0,
-	DEQ = 256,
-	NE,
-	LE,
-	GE,
-	CAT,
-	OP_DELIM,
-	NUM,
-	ID,
-	STRING
-}
-TokenClass;
-
 
 typedef enum {
 	INVALID_CHARACTER,
@@ -34,68 +17,42 @@ typedef enum {
 }
 ErrorClass;
 
-typedef struct {
-	TokenClass class;
-	int len;
-	char *str;
-}
-Token;
+typedef struct symbol_table_node SymbolTableNode;
+typedef struct error_list_node ErrorListNode;
+typedef struct state_machine_output StateMachineOutput;
+typedef StateMachineOutput State(Lexer *lexer, char *start, int token_len);
 
-typedef struct symbol_table_node {
-	struct symbol_table_node *left;
-	struct symbol_table_node *right;
-	char *symbol;
-}
-SymbolTableNode;
-
-typedef struct error_list_node {
-	int line;
-	ErrorClass error_class;
-	char *str;
-	struct error_list_node *next;
-}
-ErrorListNode;
-
-typedef struct {
+struct lexer {
 	SymbolTableNode *symbol_table;
 	ErrorListNode *error_list;
 
 	bool error_flag;
 	int current_line;
-}
-Lexer;
+};
 
-typedef struct state_machine_output State(Lexer *lexer, char *start, int token_len);
+struct symbol_table_node {
+	SymbolTableNode *left;
+	SymbolTableNode *right;
+	char *symbol;
+};
 
-typedef struct state_machine_output {
+struct error_list_node {
+	int line;
+	ErrorClass error_class;
+	ErrorListNode *next;
+	char *str;
+};
+
+struct state_machine_output {
 	Token token;
 	State *state;
-}
-StateMachineOutput;
-
-char *reserved_id_list[RESERVED_ID_N] = {
-	"do",
-	"if",
-	"in",
-	"or",
-	"and",
-	"end",
-	"for",
-	"nil",
-	"not",
-	"else",
-	"then",
-	"true",
-	"break",
-	"false",
-	"local",
-	"until",
-	"while",
-	"elseif",
-	"repeat",
-	"return",
-	"function"
 };
+
+void error_list_insert(Lexer *lexer, ErrorClass error_class, char *start, int token_len);
+void symbol_table_init(Lexer *lexer);
+char * symbol_table_insert(Lexer *lexer, char *symbol, int len);
+bool is_reserved_id(char *symbol);
+bool is_digit(char c);
 
 State state_init;
 State state_error;
@@ -135,7 +92,181 @@ State state_cmt_3;
 State state_cmt_4;
 State state_cmt_5;
 
-char *symbol_table_insert(Lexer *lexer, char *symbol, int len)
+char * reserved_id_list[RESERVED_ID_N] = {
+	"do",
+	"if",
+	"in",
+	"or",
+	"and",
+	"end",
+	"for",
+	"nil",
+	"not",
+	"else",
+	"then",
+	"true",
+	"break",
+	"false",
+	"local",
+	"until",
+	"while",
+	"elseif",
+	"repeat",
+	"return",
+	"function"
+};
+
+Lexer * lexer_init(void)
+{
+	Lexer *lexer = malloc(sizeof *lexer);
+	
+	lexer->symbol_table = NULL;
+	lexer->error_list = NULL;
+
+	lexer->error_flag = false;
+	lexer->current_line = 1;
+
+	symbol_table_init(lexer);
+
+	return lexer;
+}
+
+Token next_token(Lexer *lexer, char **start)
+{
+	StateMachineOutput out;
+	char c;
+	int token_len = 0;
+
+	State *current_state = &state_init;
+
+	while ((c = (*start)[token_len++]) != '\0' || current_state != &state_init) {
+		//printf("\nstart: %c\ncurrent: %c\nlen: %i\n", **start, c, token_len);
+
+		out = current_state(lexer, *start, token_len);
+
+		current_state = out.state;
+
+		if (out.token.class == SKIP) {
+			*start += token_len;
+			token_len = 0;
+
+			continue;
+		}
+
+		if (out.token.class != 0) {
+			*start += out.token.len;
+
+			return out.token;
+		}
+	}
+
+	out.token.class = NONE;
+	return out.token;
+}
+
+bool error_detected(Lexer *lexer)
+{
+	return lexer->error_flag;
+}
+
+void print_errors(Lexer *lexer)
+{
+	ErrorListNode *next = lexer->error_list;
+
+	while (next != NULL) {
+		switch (next->error_class) {
+		case INVALID_CHARACTER:
+			fprintf(stderr, "Caractere inválido '%c' na linha %i\n", next->str[0], next->line);
+			break;
+		case INVALID_TOKEN:
+			fprintf(stderr, "Token inválido ~ na linha %i\n", next->line);
+			break;
+		case INVALID_ESCAPE_SEQUENCE:
+			int len = strlen(next->str);
+			fprintf(stderr, "Sequência de escape inválida \\%c na linha %i\n", next->str[len - 1], next->line);
+			break;
+		case UNTERMINATED_STRING:
+			fprintf(stderr, "Cadeia de caracteres na linha %i e não encerrada\n", next->line);
+			break;
+		case UNTERMINATED_COMMENT:
+			fprintf(stderr, "Comentário de múltiplas linhas aberto na linha %i e não encerrado\n", next->line);
+			break;
+		}
+		next = next->next;
+	}
+}
+
+void print_token(Token token)
+{
+	switch (token.class) {
+	case NONE:
+	case SKIP:
+		break;
+	case DEQ:
+		printf("<nome-token: '=='>\n");
+		break;
+	case NE:
+		printf("<nome-token: '~='>\n");
+		break;
+	case LE:
+		printf("<nome-token: '<='>\n");
+		break;
+	case GE:
+		printf("<nome-token: '>='>\n");
+		break;
+	case CAT:
+		printf("<nome-token: '..'>\n");
+		break;
+	case OP_DELIM:
+		printf("<nome-token: '%c'>\n", token.str[0]);
+		break;
+	case NUM:
+		printf("<nome-token: NUM, atributo: %s>\n", token.str);
+		break;
+	case ID:
+		if (is_reserved_id(token.str))
+			printf("<nome-token: '%s'>\n", token.str);
+		else
+			printf("<nome-token: ID, atributo: %s>\n", token.str);
+		break;
+	case STRING:
+		printf("<nome-token: STRING, atributo: %s>\n", token.str);
+		break;
+	}
+}
+
+void error_list_insert(Lexer *lexer, ErrorClass error_class, char *start, int token_len)
+{
+	ErrorListNode *head = lexer->error_list;
+	ErrorListNode *next;
+
+	lexer->error_flag = true;
+
+	next = malloc(sizeof *next);
+	next->next = NULL;
+	next->error_class = error_class;
+	next->line = lexer->current_line;
+	next->str = malloc(token_len);
+	next->str[token_len] = '\0';
+	strncpy(next->str, start, token_len);
+
+	if (lexer->error_list == NULL) {
+		lexer->error_list = next;
+		return;
+	}
+
+	while (head->next != NULL)
+		head = head->next;
+	head->next = next;
+}
+
+void symbol_table_init(Lexer *lexer)
+{
+	for (int i = 0; i < RESERVED_ID_N; i++)
+		symbol_table_insert(lexer, reserved_id_list[i], strlen(reserved_id_list[i]));
+}
+
+char * symbol_table_insert(Lexer *lexer, char *symbol, int len)
 {
 	SymbolTableNode *root = lexer->symbol_table;
 	SymbolTableNode *next;
@@ -179,84 +310,6 @@ char *symbol_table_insert(Lexer *lexer, char *symbol, int len)
 	return next->symbol;
 }
 
-void symbol_table_init(Lexer *lexer)
-{
-	for (int i = 0; i < RESERVED_ID_N; i++)
-		symbol_table_insert(lexer, reserved_id_list[i], strlen(reserved_id_list[i]));
-}
-
-void error_list_insert(Lexer *lexer, ErrorClass error_class, char *start, int token_len)
-{
-	ErrorListNode *head = lexer->error_list;
-	ErrorListNode *next;
-
-	lexer->error_flag = true;
-
-	next = malloc(sizeof *next);
-	next->next = NULL;
-	next->error_class = error_class;
-	next->line = lexer->current_line;
-	next->str = malloc(token_len);
-	next->str[token_len] = '\0';
-	strncpy(next->str, start, token_len);
-
-	if (lexer->error_list == NULL) {
-		lexer->error_list = next;
-		return;
-	}
-
-	while (head->next != NULL)
-		head = head->next;
-	head->next = next;
-}
-
-Lexer lexer_init(void)
-{
-	Lexer lexer = {
-		.symbol_table = NULL,
-		.error_list = NULL,
-
-		.error_flag = false,
-		.current_line = 1,
-	};
-
-	symbol_table_init(&lexer);
-
-	return lexer;
-}
-
-void print_errors(Lexer *lexer)
-{
-	ErrorListNode *next = lexer->error_list;
-
-	while (next != NULL) {
-		switch (next->error_class) {
-		case INVALID_CHARACTER:
-			fprintf(stderr, "Caractere inválido '%c' na linha %i\n", next->str[0], next->line);
-			break;
-		case INVALID_TOKEN:
-			fprintf(stderr, "Token inválido ~ na linha %i\n", next->line);
-			break;
-		case INVALID_ESCAPE_SEQUENCE:
-			int len = strlen(next->str);
-			fprintf(stderr, "Sequência de escape inválida \\%c na linha %i\n", next->str[len - 1], next->line);
-			break;
-		case UNTERMINATED_STRING:
-			fprintf(stderr, "Cadeia de caracteres na linha %i e não encerrada\n", next->line);
-			break;
-		case UNTERMINATED_COMMENT:
-			fprintf(stderr, "Comentário de múltiplas linhas aberto na linha %i e não encerrado\n", next->line);
-			break;
-		}
-		next = next->next;
-	}
-}
-
-bool is_digit(char c)
-{
-	return isdigit(c) > 0;
-}
-
 bool is_reserved_id(char *symbol)
 {
 	int i, cmp;
@@ -271,65 +324,9 @@ bool is_reserved_id(char *symbol)
 	return false;
 }
 
-void print_token(Token token)
+bool is_digit(char c)
 {
-	switch (token.class) {
-	case NONE:
-	case SKIP:
-		break;
-	case DEQ:
-		printf("<nome-token: '=='>\n");
-		break;
-	case NE:
-		printf("<nome-token: '~='>\n");
-		break;
-	case LE:
-		printf("<nome-token: '<='>\n");
-		break;
-	case GE:
-		printf("<nome-token: '>='>\n");
-		break;
-	case CAT:
-		printf("<nome-token: '..'>\n");
-		break;
-	case OP_DELIM:
-		printf("<nome-token: '%c'>\n", token.str[0]);
-		break;
-	case NUM:
-		printf("<nome-token: NUM, atributo: %s>\n", token.str);
-		break;
-	case ID:
-		if (is_reserved_id(token.str))
-			printf("<nome-token: '%s'>\n", token.str);
-		else
-			printf("<nome-token: ID, atributo: %s>\n", token.str);
-		break;
-	case STRING:
-		printf("<nome-token: STRING, atributo: %s>\n", token.str);
-		break;
-	}
-}
-
-char *read_file(char *file_name)
-{
-	FILE *file = fopen(file_name, "r");
-	long f_size;
-	char *code, *cur;
-
-	if (file == NULL)
-		return NULL;
-
-	fseek(file, 0, SEEK_END);
-	f_size = ftell(file);
-	fseek(file, 0, SEEK_SET);
-
-	code = malloc(f_size);
-	cur = code;
-
-	while ((*cur++ = fgetc(file)) != EOF);
-	*--cur = '\0';
-
-	return code;
+	return isdigit(c) > 0;
 }
 
 StateMachineOutput state_init(Lexer *lexer, char *start, int token_len)
@@ -436,7 +433,6 @@ StateMachineOutput state_ne_1(Lexer *lexer, char *start, int token_len)
 
 	return out;
 };
-
 
 StateMachineOutput state_lt(Lexer *lexer, char *start, int token_len)
 {
@@ -802,66 +798,4 @@ StateMachineOutput state_cmt_5(Lexer *lexer, char *start, int token_len)
 	out.token = TOKEN_SKIP;
 
 	return out;
-}
-
-StateMachineOutput next_token(Lexer *lexer, char **start)
-{
-	StateMachineOutput out;
-	char c;
-	int token_len = 0;
-
-	State *current_state = &state_init;
-
-	while ((c = (*start)[token_len++]) != '\0' || current_state != &state_init) {
-		//printf("\nstart: %c\ncurrent: %c\nlen: %i\n", **start, c, token_len);
-
-		out = current_state(lexer, *start, token_len);
-
-		current_state = out.state;
-
-		if (out.token.class == SKIP) {
-			*start += token_len;
-			token_len = 0;
-
-			continue;
-		}
-
-		if (out.token.class != 0) {
-			*start += out.token.len;
-
-			return out;
-		}
-	}
-
-	out.token.class = NONE;
-	return out;
-}
-
-int main(int argc, char *argv[])
-{
-	Lexer lexer = lexer_init();
-
-	StateMachineOutput out;
-
-	if (argv[1] == NULL) {
-		fprintf(stderr, "Erro: arquivo para leitura deve ser informado\n");
-		exit(-1);
-	}
-
-	char *code = read_file(argv[1]);
-	
-	if (code == NULL) {
-		fprintf(stderr, "Erro: arquivo não encontrado\n");
-		exit(-1);
-	}
-
-	do {
-		out = next_token(&lexer, &code);
-
-		if (lexer.error_flag == false)
-			print_token(out.token);
-	}
-	while (out.token.class != NONE);
-
-	print_errors(&lexer);
 }

@@ -1,3 +1,4 @@
+#include "compiler.h"
 #include "lexer.h"
 
 #include <stdio.h>
@@ -217,20 +218,17 @@ void print_token(Token token)
 	case CAT:
 		printf("<nome-token: '..'>\n");
 		break;
-	case OP_DELIM:
-		printf("<nome-token: '%c'>\n", token.str[0]);
-		break;
 	case NUM:
 		printf("<nome-token: NUM, atributo: %s>\n", token.str);
 		break;
-	case ID:
-		if (is_reserved_id(token.str))
-			printf("<nome-token: '%s'>\n", token.str);
-		else
-			printf("<nome-token: ID, atributo: %s>\n", token.str);
-		break;
 	case STRING:
 		printf("<nome-token: STRING, atributo: %s>\n", token.str);
+		break;
+	case ID:
+		printf("<nome-token: ID, atributo: %s>\n", token.str);
+		break;
+	default:
+		printf("<nome-token: '%s'>\n", token.str);
 		break;
 	}
 }
@@ -310,7 +308,7 @@ char * symbol_table_insert(Lexer *lexer, char *symbol, int len)
 	return next->symbol;
 }
 
-bool is_reserved_id(char *symbol)
+TokenClass id_class(char *symbol)
 {
 	int i, cmp;
 
@@ -318,11 +316,22 @@ bool is_reserved_id(char *symbol)
 		cmp = strcmp(symbol, reserved_id_list[i]);
 
 		if (cmp == 0)
-			return true;
+			return ID + i + 1;
 	}
 
-	return false;
+	return ID;
 }
+
+TokenClass op_delim_class(char symbol)
+{
+	char op_delim[19] = "=<>+-*/%^.()[]{},:;";	
+	
+	return (strchr(op_delim, symbol) - op_delim) + EQ;
+}
+
+
+
+
 
 bool is_digit(char c)
 {
@@ -499,11 +508,11 @@ StateMachineOutput state_cat(Lexer *lexer, char *start, int token_len)
 
 StateMachineOutput state_op_delim(Lexer *lexer, char *start, int token_len)
 {
-	StateMachineOutput out = {
-		.token.class = OP_DELIM,
-		.token.len = 1,
-		.token.str = start
-	};
+	StateMachineOutput out;
+	
+	out.token.len = 1;
+	out.token.str = symbol_table_insert(lexer, start, out.token.len);
+	out.token.class = op_delim_class(*out.token.str);
 
 	return out;
 };
@@ -565,10 +574,10 @@ StateMachineOutput state_id_1(Lexer *lexer, char *start, int token_len)
 
 	token_len -= 2;
 
-	out.token.class = ID;
 	out.token.len = token_len;
 	out.token.str = symbol_table_insert(lexer, start, out.token.len);
-
+	out.token.class = id_class(out.token.str);
+	
 	return out;
 };
 

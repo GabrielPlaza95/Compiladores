@@ -224,8 +224,8 @@ void print_token(Token token)
 	case STRING:
 		printf("<nome-token: STRING, atributo: %s>\n", token.str);
 		break;
-	case ID:
-		printf("<nome-token: ID, atributo: %s>\n", token.str);
+	case NAME:
+		printf("<nome-token: NAME, atributo: %s>\n", token.str);
 		break;
 	default:
 		printf("<nome-token: '%s'>\n", token.str);
@@ -316,15 +316,17 @@ TokenClass id_class(char *symbol)
 		cmp = strcmp(symbol, reserved_id_list[i]);
 
 		if (cmp == 0)
-			return ID + i + 1;
+			return NAME + i + 1;
 	}
 
-	return ID;
+	return NAME;
 }
 
 TokenClass op_delim_class(char symbol)
 {
-	char op_delim[19] = "=<>+-*/%^.()[]{},:;";	
+	//char op_delim[] = "=<>+-*/%^.()[]{},:;";
+	
+	char op_delim[] = "=<>+-*/%^()[]{},;";
 	
 	return (strchr(op_delim, symbol) - op_delim) + EQ;
 }

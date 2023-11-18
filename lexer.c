@@ -9,17 +9,7 @@
 
 #define RESERVED_ID_N 21
 
-typedef enum {
-	INVALID_CHARACTER,
-	INVALID_TOKEN,
-	INVALID_ESCAPE_SEQUENCE,
-	UNTERMINATED_STRING,
-	UNTERMINATED_COMMENT
-}
-ErrorClass;
-
 typedef struct symbol_table_node SymbolTableNode;
-typedef struct error_list_node ErrorListNode;
 typedef struct state_machine_output StateMachineOutput;
 typedef StateMachineOutput State(Lexer *lexer, char *start, int token_len);
 
@@ -37,19 +27,12 @@ struct symbol_table_node {
 	char *symbol;
 };
 
-struct error_list_node {
-	int line;
-	ErrorClass error_class;
-	ErrorListNode *next;
-	char *str;
-};
-
 struct state_machine_output {
 	Token token;
 	State *state;
 };
 
-void error_list_insert(Lexer *lexer, ErrorClass error_class, char *start, int token_len);
+void lexer_error_list_insert(Lexer *lexer, ErrorClass error_class, char *start, int token_len);
 void symbol_table_init(Lexer *lexer);
 char * symbol_table_insert(Lexer *lexer, char *symbol, int len);
 bool is_reserved_id(char *symbol);
@@ -132,7 +115,7 @@ Lexer * lexer_init(void)
 	return lexer;
 }
 
-Token next_token(Lexer *lexer, char **start)
+Token lexer_token_next(Lexer *lexer, char **start)
 {
 	StateMachineOutput out;
 	char c;
@@ -165,12 +148,12 @@ Token next_token(Lexer *lexer, char **start)
 	return out.token;
 }
 
-bool error_detected(Lexer *lexer)
+bool lexer_error_detected(Lexer *lexer)
 {
 	return lexer->error_flag;
 }
 
-void print_errors(Lexer *lexer)
+void lexer_error_list_print(Lexer *lexer)
 {
 	ErrorListNode *next = lexer->error_list;
 
@@ -197,7 +180,7 @@ void print_errors(Lexer *lexer)
 	}
 }
 
-void print_token(Token token)
+void lexer_token_print(Token token)
 {
 	switch (token.class) {
 	case NONE:
@@ -233,7 +216,7 @@ void print_token(Token token)
 	}
 }
 
-void error_list_insert(Lexer *lexer, ErrorClass error_class, char *start, int token_len)
+void lexer_error_list_insert(Lexer *lexer, ErrorClass error_class, char *start, int token_len)
 {
 	ErrorListNode *head = lexer->error_list;
 	ErrorListNode *next;
@@ -388,7 +371,7 @@ StateMachineOutput state_init(Lexer *lexer, char *start, int token_len)
 		}
 		else {
 			out.state = &state_init;
-			error_list_insert(lexer, INVALID_CHARACTER, start, token_len);
+			lexer_error_list_insert(lexer, INVALID_CHARACTER, start, token_len);
 		}
 	}
 
@@ -425,7 +408,7 @@ StateMachineOutput state_ne_0(Lexer *lexer, char *start, int token_len)
 
 	if (c != '=') {
 		out.state = &state_init;
-		error_list_insert(lexer, INVALID_TOKEN, start, token_len);
+		lexer_error_list_insert(lexer, INVALID_TOKEN, start, token_len);
 	}
 	else {
 		out.state = &state_ne_1;
@@ -593,7 +576,7 @@ StateMachineOutput state_str_0(Lexer *lexer, char *start, int token_len)
 
 	if (c == '\0') {
 		out.state = state_init;
-		error_list_insert(lexer, UNTERMINATED_STRING, start, token_len - 1);
+		lexer_error_list_insert(lexer, UNTERMINATED_STRING, start, token_len - 1);
 		return out;
 	}
 
@@ -618,14 +601,14 @@ StateMachineOutput state_str_1(Lexer *lexer, char *start, int token_len)
 
 	if (c == '\0') {
 		out.state = &state_init;
-		error_list_insert(lexer, UNTERMINATED_STRING, start, token_len - 1);
+		lexer_error_list_insert(lexer, UNTERMINATED_STRING, start, token_len - 1);
 		return out;
 	}
 
 	if (strchr("abfnrtv\\\"", c) == NULL) {
 		out.state = &state_str_3;
 		out.token = TOKEN_SKIP;
-		error_list_insert(lexer, INVALID_ESCAPE_SEQUENCE, start, token_len);
+		lexer_error_list_insert(lexer, INVALID_ESCAPE_SEQUENCE, start, token_len);
 	}
 	else {
 		out.state = &state_str_0;
@@ -658,7 +641,7 @@ StateMachineOutput state_str_3(Lexer *lexer, char *start, int token_len)
 
 	if (c == '\0') {
 		out.state = &state_init;
-		error_list_insert(lexer, UNTERMINATED_STRING, start, token_len - 1);
+		lexer_error_list_insert(lexer, UNTERMINATED_STRING, start, token_len - 1);
 		return out;
 	}
 
@@ -684,12 +667,12 @@ StateMachineOutput state_str_4(Lexer *lexer, char *start, int token_len)
 
 	if (c == '\0') {
 		out.state = &state_init;
-		error_list_insert(lexer, UNTERMINATED_STRING, start, token_len - 1);
+		lexer_error_list_insert(lexer, UNTERMINATED_STRING, start, token_len - 1);
 		return out;
 	}
 
 	if (strchr("abfnrtv\\\"", c) == NULL)
-		error_list_insert(lexer, INVALID_ESCAPE_SEQUENCE, start, token_len);
+		lexer_error_list_insert(lexer, INVALID_ESCAPE_SEQUENCE, start, token_len);
 
 	out.state = &state_str_3;
 	out.token = TOKEN_SKIP;
@@ -764,7 +747,7 @@ StateMachineOutput state_cmt_3(Lexer *lexer, char *start, int token_len)
 
 	if (c == '\0') {
 		out.state = state_init;
-		error_list_insert(lexer, UNTERMINATED_COMMENT, start, token_len - 1);
+		lexer_error_list_insert(lexer, UNTERMINATED_COMMENT, start, token_len - 1);
 		return out;
 	}
 
@@ -784,7 +767,7 @@ StateMachineOutput state_cmt_4(Lexer *lexer, char *start, int token_len)
 
 	if (c == '\0') {
 		out.state = &state_init;
-		error_list_insert(lexer, UNTERMINATED_COMMENT, start, token_len - 1);
+		lexer_error_list_insert(lexer, UNTERMINATED_COMMENT, start, token_len - 1);
 		return out;
 	}
 

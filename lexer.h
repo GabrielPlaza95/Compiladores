@@ -20,9 +20,9 @@ typedef struct lexer Lexer;
 struct lexer;
 
 Lexer * lexer_init(void);
-Token next_token(Lexer *lexer, char **start);
-_Bool error_detected(Lexer *lexer);
-void print_errors(Lexer *lexer);
-void print_token(Token token);
+Token lexer_token_next(Lexer *lexer, char **start);
+_Bool lexer_error_detected(Lexer *lexer);
+void lexer_error_list_print(Lexer *lexer);
+void lexer_token_print(Token token);
 
 #endif

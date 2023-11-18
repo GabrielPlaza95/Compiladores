@@ -14,7 +14,6 @@ typedef enum symbol {
 	DIV,
 	MOD,
 	POW,
-	//DOT,
 	LPAREN,
 	RPAREN,
 	LBRACKET,
@@ -22,7 +21,6 @@ typedef enum symbol {
 	LBRACE,
 	RBRACE,
 	COMMA,
-	//COLON,
 	SEMICOLON,
 	DEQ,
 	NE,
@@ -83,5 +81,23 @@ typedef enum symbol {
 	NAMES_
 }
 Symbol;
+
+typedef enum {
+	INVALID_CHARACTER,
+	INVALID_TOKEN,
+	INVALID_ESCAPE_SEQUENCE,
+	UNTERMINATED_STRING,
+	UNTERMINATED_COMMENT
+}
+ErrorClass;
+
+typedef struct error_list_node ErrorListNode;
+
+struct error_list_node {
+	int line;
+	ErrorClass error_class;
+	ErrorListNode *next;
+	char *str;
+};
 
 #endif

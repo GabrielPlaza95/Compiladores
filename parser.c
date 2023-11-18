@@ -5,18 +5,22 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <stdarg.h>
+#include <string.h>
 
 #define TERMINAL_N 46
 #define NON_TERMINAL_N 26
 #define INITIAL_SYMBOL_STACK_CAP 256
 
 #define ARRAY_LEN(arr) (sizeof(arr) / sizeof(*arr))
+#define symbol_stack_push_rule(parser, ...) symbol_stack_push_rule_n(parser, sizeof ((Symbol[]) {__VA_ARGS__}) / sizeof (Symbol), __VA_ARGS__)
 
 typedef Symbol Terminal;
 typedef Symbol Nonterminal;
 
 typedef struct parser Parser;
 typedef struct symbol_stack SymbolStack;
+typedef struct parser_error_list_node ParserErrorListNode;
+typedef ParserErrorListNode ParserErrorList;
 typedef void Rule(Parser *parser, Terminal t);
 
 struct symbol_stack {
@@ -24,9 +28,17 @@ struct symbol_stack {
 	Symbol *arr;
 };
 
+struct parser_error_list_node {
+	int line;
+	ParserErrorListNode *next;
+	Symbol received;
+	int expected_len;
+	Symbol *expected;
+};
+
 struct parser {
 	SymbolStack symbol_stack;
-	ErrorListNode *error_list;
+	ParserErrorList *error_list;
 
 	bool panic_mode_flag;
 	bool error_flag;
@@ -39,12 +51,15 @@ SymbolStack symbol_stack_init(void);
 Symbol symbol_stack_peek(Parser *parser);
 Symbol symbol_stack_pop(Parser *parser);
 void symbol_stack_push(Parser *parser, Symbol symbol);
-void symbol_stack_push_rule(Parser *parser, int len,  ...);
+void symbol_stack_push_rule_n(Parser *parser, int len,  ...);
 void symbol_stack_push_rule_v(Parser *parser, int len, va_list args);
 void symbol_stack_print(Parser *parser);
 char * read_file(char *file_name);
 bool is_terminal(Symbol symbol);
 bool is_in_array(Symbol symbol, Symbol *arr, int n);
+bool parser_error_detected(Parser *parser);
+void parser_error_list_insert(Parser *parser, Symbol expected, int received_len, Symbol *received);
+void parser_error_list_print(Parser *parser);
 
 
 Rule rule_block;
@@ -84,8 +99,8 @@ char *symbol_list[] = {
 	"do", "if", "in", "or", "and", "end", "for", "nil", "not",
 	"else", "then", "true", "break", "false", "local", "until", "while", "elseif", "repeat", "return", "function", 
 
-	"BLOCK", "STMT", "ELSESTMT", "LOCALDECL", "FNDECL", "EXPS", "EXP", "EXPS_", "EXP_", "LOOPEXP", "LOOPEXP_", "RETURNEXP",
-	"TABLE", "FIELDS", "FIELD", "FIELDS_", "BINOP", "VARS", "VARS_", "VAR", "VAR_", "FNBODY", "FNEXP", "FNPARAMS", "NAMES", "NAMES_"
+	"BLOCK", "STMT", "ELSESTMT", "LOCALDECL", "FNDECL", "EXPS", "EXP", "EXPS'", "EXP'", "LOOPEXP", "LOOPEXP'", "RETURNEXP",
+	"TABLE", "FIELDS", "FIELD", "FIELDS'", "BINOP", "VARS", "VARS'", "VAR", "VAR'", "FNBODY", "FNEXP", "FNPARAMS", "NAMES", "NAMES'"
 };
 
 Rule *parser_table[NON_TERMINAL_N] = {
@@ -137,6 +152,7 @@ int main(int argc, char *argv[])
 	}
 	
 	token = lexer_token_next(lexer, &code);
+	//parser->current_line = lexer->current_line;
 	
 	do {
 		symbol = symbol_stack_peek(parser);
@@ -149,8 +165,10 @@ int main(int argc, char *argv[])
 			if (symbol == token.class) {
 				symbol_stack_pop(parser);
 				token = lexer_token_next(lexer, &code);
+				//parser->current_line = lexer->current_line;
 			}
 			else {
+				parser_error_list_insert(parser, symbol, 1, &token.class);
 				panic(parser);
 			}
 			continue;
@@ -159,13 +177,18 @@ int main(int argc, char *argv[])
 		if (parser->panic_mode_flag == true)
 			token = lexer_token_next(lexer, &code);
 
+		//parser->current_line = lexer->current_line;
+
 		Rule *rule = parser_table[symbol - BLOCK];
 		rule(parser, token.class);
 	}
 	while (symbol != NONE && token.class != NONE);
 
 	lexer_error_list_print(lexer);
-	//parser_error_list_print(parser);
+	parser_error_list_print(parser);
+	
+	if (!parser_error_detected(parser))
+		printf("Program parsed with no errors\n");
 }
 
 Parser * parser_init(void)
@@ -202,6 +225,48 @@ bool parser_error_detected(Parser *parser)
 	return parser->error_flag = true;
 }
 
+void parser_error_list_insert(Parser *parser, Symbol received, int expected_len, Symbol *expected)
+{
+	ParserErrorListNode *head = parser->error_list;
+	ParserErrorListNode *next;
+
+	parser->error_flag = true;
+
+	next = malloc(sizeof *next);
+	next->next = NULL;
+	
+	next->line = parser->current_line;
+
+	next->received = received;
+	next->expected = malloc(next->expected_len = expected_len);
+	
+	memcpy(next->expected, expected, sizeof (next->expected) * next->expected_len);
+
+	if (parser->error_list == NULL) {
+		parser->error_list = next;
+		return;
+	}
+
+	while (head->next != NULL)
+		head = head->next;
+
+	head->next = next;
+}
+
+void parser_error_list_print(Parser *parser)
+{
+	ParserErrorListNode *next = parser->error_list;
+
+	while (next != NULL) {
+		printf("Recebeu %s mas esperava ", symbol_list[next->received]);
+		
+		for (int i = 0; i < next->expected_len; i++) {
+			printf("%s, ", symbol_list[next->expected[i]]);
+		}
+		
+		next = next->next;
+	}
+}
 
 SymbolStack symbol_stack_init(void)
 {
@@ -231,7 +296,7 @@ void symbol_stack_push(Parser *parser, Symbol symbol)
 	stack->arr[stack->len++] = symbol;
 }
 
-void symbol_stack_push_rule(Parser *parser, int len,  ...)
+void symbol_stack_push_rule_n(Parser *parser, int len,  ...)
 {
 	va_list args;
 	va_start(args, len);
@@ -327,13 +392,14 @@ void rule_block(Parser *parser, Terminal t)
 	
 	if (is_in_array(t, first, ARRAY_LEN(first))) {
 		symbol_stack_pop(parser);
-		symbol_stack_push_rule(parser, 3, STMT, SEMICOLON, BLOCK);
+		symbol_stack_push_rule(parser, STMT, SEMICOLON, BLOCK);
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
 		parser->panic_mode_flag = false;
 	}
 	else {
+		parser_error_list_insert(parser, t, ARRAY_LEN(first), first);
 		panic(parser);
 	}
 }
@@ -348,32 +414,32 @@ void rule_stmt(Parser *parser, Terminal t)
 		
 		switch (t) {
 		case DO:
-			symbol_stack_push_rule(parser, 3, DO, BLOCK, END);
+			symbol_stack_push_rule(parser, DO, BLOCK, END);
 			break;
 		case WHILE:
-			symbol_stack_push_rule(parser, 5, WHILE, EXP, DO, BLOCK, DO, END);
+			symbol_stack_push_rule(parser, WHILE, EXP, DO, BLOCK, DO, END);
 			break;
 		case BREAK:
-			symbol_stack_push_rule(parser, 1, BREAK);
+			symbol_stack_push_rule(parser, BREAK);
 			break;
 		case IF:
-			symbol_stack_push_rule(parser, 6, IF, EXP, THEN, BLOCK, ELSESTMT, END);
+			symbol_stack_push_rule(parser, IF, EXP, THEN, BLOCK, ELSESTMT, END);
 			break;
 		case FOR:
-			symbol_stack_push_rule(parser, 5, FOR, LOOPEXP, DO, BLOCK, END);
+			symbol_stack_push_rule(parser, FOR, LOOPEXP, DO, BLOCK, END);
 			break;
 		case LOCAL:
-			symbol_stack_push_rule(parser, 2, LOCAL, LOCALDECL);
+			symbol_stack_push_rule(parser, LOCAL, LOCALDECL);
 			break;
 		case RETURN:
-			symbol_stack_push_rule(parser, 2, RETURN, RETURNEXP);
+			symbol_stack_push_rule(parser, RETURN, RETURNEXP);
 			break;
 		case NAME:
 		case LPAREN:
-			symbol_stack_push_rule(parser, 3, VARS, EQ, EXPS);
+			symbol_stack_push_rule(parser, VARS, EQ, EXPS);
 			break;
 		case FUNCTION:
-			symbol_stack_push_rule(parser, 3, FNDECL);
+			symbol_stack_push_rule(parser, FNDECL);
 			break;
 		default:
 			break;
@@ -398,10 +464,10 @@ void rule_elsestmt(Parser *parser, Terminal t)
 		
 		switch (t) {
 		case ELSEIF:
-			symbol_stack_push_rule(parser, 5, ELSEIF, EXP, THEN, BLOCK, ELSESTMT);
+			symbol_stack_push_rule(parser, ELSEIF, EXP, THEN, BLOCK, ELSESTMT);
 			break;
 		case ELSE:
-			symbol_stack_push_rule(parser, 2, ELSE, BLOCK);
+			symbol_stack_push_rule(parser, ELSE, BLOCK);
 			break;
 		default:
 			break;
@@ -426,10 +492,10 @@ void rule_localdecl(Parser *parser, Terminal t)
 		
 		switch (t) {
 		case FUNCTION:
-			symbol_stack_push_rule(parser, 1, FNDECL);
+			symbol_stack_push_rule(parser, FNDECL);
 			break;
 		case NAME:
-			symbol_stack_push_rule(parser, 3, NAMES, EQ, EXPS);
+			symbol_stack_push_rule(parser, NAMES, EQ, EXPS);
 			break;
 		default:
 			break;
@@ -452,7 +518,7 @@ void rule_fndecl(Parser *parser, Terminal t)
 	if (is_in_array(t, first, ARRAY_LEN(first))) {
 		symbol_stack_pop(parser);
 
-		symbol_stack_push_rule(parser, 3, FUNCTION, NAME, FNBODY);
+		symbol_stack_push_rule(parser, FUNCTION, NAME, FNBODY);
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
@@ -471,7 +537,7 @@ void rule_exps(Parser *parser, Terminal t)
 	if (is_in_array(t, first, ARRAY_LEN(first))) {
 		symbol_stack_pop(parser);
 		
-		symbol_stack_push_rule(parser, 2, EXP, EXPS_);
+		symbol_stack_push_rule(parser, EXP, EXPS_);
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
@@ -492,35 +558,35 @@ void rule_exp(Parser *parser, Terminal t)
 		
 		switch (t) {
 		case NOT:
-			symbol_stack_push_rule(parser, 3, NOT, EXP, EXP_);
+			symbol_stack_push_rule(parser, NOT, EXP, EXP_);
 			break;
 		case SUB:
-			symbol_stack_push_rule(parser, 3, SUB, EXP, EXP_);
+			symbol_stack_push_rule(parser, SUB, EXP, EXP_);
 			break;
 		case NIL:
-			symbol_stack_push_rule(parser, 2, NIL, EXP_);
+			symbol_stack_push_rule(parser, NIL, EXP_);
 			break;
 		case TRUE:
-			symbol_stack_push_rule(parser, 2, TRUE, EXP_);
+			symbol_stack_push_rule(parser, TRUE, EXP_);
 			break;
 		case FALSE:
-			symbol_stack_push_rule(parser, 2, FALSE, EXP_);
+			symbol_stack_push_rule(parser, FALSE, EXP_);
 			break;
 		case NUM:
-			symbol_stack_push_rule(parser, 2, NUM, EXP_);
+			symbol_stack_push_rule(parser, NUM, EXP_);
 			break;
 		case STRING:
-			symbol_stack_push_rule(parser, 2, STRING, EXP_);
+			symbol_stack_push_rule(parser, STRING, EXP_);
 			break;
 		case FUNCTION:
-			symbol_stack_push_rule(parser, 2, FNEXP, EXP_);
+			symbol_stack_push_rule(parser, FNEXP, EXP_);
 			break;
 		case LBRACE:
-			symbol_stack_push_rule(parser, 2, TABLE, EXP_);
+			symbol_stack_push_rule(parser, TABLE, EXP_);
 			break;
 		case LPAREN:
 		case NAME:
-			symbol_stack_push_rule(parser, 2, VAR, EXP_);
+			symbol_stack_push_rule(parser, VAR, EXP_);
 			break;
 		default:
 			break;
@@ -543,7 +609,7 @@ void rule_exps_(Parser *parser, Terminal t)
 	if (is_in_array(t, first, ARRAY_LEN(first))) {
 		symbol_stack_pop(parser);
 		
-		symbol_stack_push_rule(parser, 3, COMMA, EXP, EXPS_);
+		symbol_stack_push_rule(parser, COMMA, EXP, EXPS_);
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
@@ -562,7 +628,7 @@ void rule_exp_(Parser *parser, Terminal t)
 	if (is_in_array(t, first, ARRAY_LEN(first))) {
 		symbol_stack_pop(parser);
 		
-		symbol_stack_push_rule(parser, 2, BINOP, EXP);
+		symbol_stack_push_rule(parser, BINOP, EXP);
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
@@ -583,10 +649,10 @@ void rule_loopexp(Parser *parser, Terminal t)
 		
 		switch (t) {
 		case EQ:
-			symbol_stack_push_rule(parser, 4, EQ, EXP, EXP, LOOPEXP_);
+			symbol_stack_push_rule(parser, EQ, EXP, EXP, LOOPEXP_);
 			break;
 		case COMMA:
-			symbol_stack_push_rule(parser, 3, NAMES_, IN, EXPS);
+			symbol_stack_push_rule(parser, NAMES_, IN, EXPS);
 			break;
 		default:
 			break;
@@ -609,7 +675,7 @@ void rule_loopexp_(Parser *parser, Terminal t)
 	if (is_in_array(t, first, ARRAY_LEN(first))) {
 		symbol_stack_pop(parser);
 		
-		symbol_stack_push_rule(parser, 2, COMMA, EXP);
+		symbol_stack_push_rule(parser, COMMA, EXP);
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
@@ -628,7 +694,7 @@ void rule_returnexp(Parser *parser, Terminal t)
 	if (is_in_array(t, first, ARRAY_LEN(first))) {
 		symbol_stack_pop(parser);
 		
-		symbol_stack_push_rule(parser, 1, EXPS);
+		symbol_stack_push_rule(parser, EXPS);
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
@@ -647,7 +713,7 @@ void rule_table(Parser *parser, Terminal t)
 	if (is_in_array(t, first, ARRAY_LEN(first))) {
 		symbol_stack_pop(parser);
 		
-		symbol_stack_push_rule(parser, 3, LBRACE, FIELDS, RBRACE );
+		symbol_stack_push_rule(parser, LBRACE, FIELDS, RBRACE );
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
@@ -666,7 +732,7 @@ void rule_fields(Parser *parser, Terminal t)
 	if (is_in_array(t, first, ARRAY_LEN(first))) {
 		symbol_stack_pop(parser);
 
-		symbol_stack_push_rule(parser, 2, FIELD, FIELDS_);
+		symbol_stack_push_rule(parser, FIELD, FIELDS_);
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
@@ -687,10 +753,10 @@ void rule_field(Parser *parser, Terminal t)
 
 		switch (t) {
 		case LBRACKET:
-			symbol_stack_push_rule(parser, 5, LBRACKET, EXP, RBRACKET, EQ, EXP);
+			symbol_stack_push_rule(parser, LBRACKET, EXP, RBRACKET, EQ, EXP);
 			break;
 		case NAME:
-			symbol_stack_push_rule(parser, 3, NAME, EQ, EXP);
+			symbol_stack_push_rule(parser, NAME, EQ, EXP);
 			break;
 		default:
 			break;
@@ -713,7 +779,7 @@ void rule_fields_(Parser *parser, Terminal t)
 	if (is_in_array(t, first, ARRAY_LEN(first))) {
 		symbol_stack_pop(parser);
 
-		symbol_stack_push_rule(parser, 3, COMMA, FIELD, FIELDS_);
+		symbol_stack_push_rule(parser, COMMA, FIELD, FIELDS_);
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
@@ -751,7 +817,7 @@ void rule_vars(Parser *parser, Terminal t)
 	if (is_in_array(t, first, ARRAY_LEN(first))) {
 		symbol_stack_pop(parser);
 
-		symbol_stack_push_rule(parser, 2, VAR, VARS_);
+		symbol_stack_push_rule(parser, VAR, VARS_);
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
@@ -770,7 +836,7 @@ void rule_vars_(Parser *parser, Terminal t)
 	if (is_in_array(t, first, ARRAY_LEN(first))) {
 		symbol_stack_pop(parser);
 
-		symbol_stack_push_rule(parser, 3, COMMA, VAR, VARS_);
+		symbol_stack_push_rule(parser, COMMA, VAR, VARS_);
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
@@ -791,10 +857,10 @@ void rule_var(Parser *parser, Terminal t)
 
 		switch (t) {
 		case NAME:
-			symbol_stack_push_rule(parser, 2, NAME, VAR_);
+			symbol_stack_push_rule(parser, NAME, VAR_);
 			break;
 		case LPAREN:
-			symbol_stack_push_rule(parser, 4, LPAREN, EXP, RPAREN, VAR_);
+			symbol_stack_push_rule(parser, LPAREN, EXP, RPAREN, VAR_);
 			break;
 		default:
 			break;
@@ -817,7 +883,7 @@ void rule_var_(Parser *parser, Terminal t)
 	if (is_in_array(t, first, ARRAY_LEN(first))) {
 		symbol_stack_pop(parser);
 
-		symbol_stack_push_rule(parser, 4, LBRACKET, EXP, RBRACKET, VAR);
+		symbol_stack_push_rule(parser, LBRACKET, EXP, RBRACKET, VAR);
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
@@ -836,7 +902,7 @@ void rule_fnbody(Parser *parser, Terminal t)
 	if (is_in_array(t, first, ARRAY_LEN(first))) {
 		symbol_stack_pop(parser);
 		
-		symbol_stack_push_rule(parser, 5, LPAREN, FNPARAMS, RPAREN, BLOCK, END);
+		symbol_stack_push_rule(parser, LPAREN, FNPARAMS, RPAREN, BLOCK, END);
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
@@ -855,7 +921,7 @@ void rule_fnexp(Parser *parser, Terminal t)
 	if (is_in_array(t, first, ARRAY_LEN(first))) {
 		symbol_stack_pop(parser);
 		
-		symbol_stack_push_rule(parser, 2, FUNCTION, FNBODY);
+		symbol_stack_push_rule(parser, FUNCTION, FNBODY);
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
@@ -893,7 +959,7 @@ void rule_names(Parser *parser, Terminal t)
 	if (is_in_array(t, first, ARRAY_LEN(first))) {
 		symbol_stack_pop(parser);
 		
-		symbol_stack_push_rule(parser, 2, NAME, NAMES_);
+		symbol_stack_push_rule(parser, NAME, NAMES_);
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
@@ -912,7 +978,7 @@ void rule_names_(Parser *parser, Terminal t)
 	if (is_in_array(t, first, ARRAY_LEN(first))) {
 		symbol_stack_pop(parser);
 		
-		symbol_stack_push_rule(parser, 3, COMMA, NAME, NAMES_);
+		symbol_stack_push_rule(parser, COMMA, NAME, NAMES_);
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);

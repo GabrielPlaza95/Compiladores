@@ -9,7 +9,17 @@
 
 #define RESERVED_ID_N 21
 
+typedef enum {
+	INVALID_CHARACTER,
+	INVALID_TOKEN,
+	INVALID_ESCAPE_SEQUENCE,
+	UNTERMINATED_STRING,
+	UNTERMINATED_COMMENT
+}
+ErrorClass;
+
 typedef struct symbol_table_node SymbolTableNode;
+typedef struct error_list_node ErrorListNode;
 typedef struct state_machine_output StateMachineOutput;
 typedef StateMachineOutput State(Lexer *lexer, char *start, int token_len);
 
@@ -25,6 +35,13 @@ struct symbol_table_node {
 	SymbolTableNode *left;
 	SymbolTableNode *right;
 	char *symbol;
+};
+
+struct error_list_node {
+	int line;
+	ErrorClass error_class;
+	ErrorListNode *next;
+	char *str;
 };
 
 struct state_machine_output {

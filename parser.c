@@ -168,7 +168,7 @@ int main(int argc, char *argv[])
 				//parser->current_line = lexer->current_line;
 			}
 			else {
-				parser_error_list_insert(parser, symbol, 1, &token.class);
+				parser_error_list_insert(parser, token.class, 1, &symbol);
 				panic(parser);
 			}
 			continue;
@@ -227,6 +227,9 @@ bool parser_error_detected(Parser *parser)
 
 void parser_error_list_insert(Parser *parser, Symbol received, int expected_len, Symbol *expected)
 {
+	if (parser->panic_mode_flag == true)
+		return;
+	
 	ParserErrorListNode *head = parser->error_list;
 	ParserErrorListNode *next;
 
@@ -238,9 +241,14 @@ void parser_error_list_insert(Parser *parser, Symbol received, int expected_len,
 	next->line = parser->current_line;
 
 	next->received = received;
-	next->expected = malloc(next->expected_len = expected_len);
 	
-	memcpy(next->expected, expected, sizeof (next->expected) * next->expected_len);
+	next->expected_len = expected_len;
+	
+	size_t buf_size = sizeof (*next->expected) * next->expected_len;
+	
+	next->expected = malloc(buf_size);
+	
+	memcpy(next->expected, expected, buf_size);
 
 	if (parser->error_list == NULL) {
 		parser->error_list = next;
@@ -254,15 +262,16 @@ void parser_error_list_insert(Parser *parser, Symbol received, int expected_len,
 }
 
 void parser_error_list_print(Parser *parser)
-{
+{	
 	ParserErrorListNode *next = parser->error_list;
 
 	while (next != NULL) {
-		printf("Recebeu %s mas esperava ", symbol_list[next->received]);
+		fprintf(stderr, "Recebeu %s mas esperava ", symbol_list[next->received]);
 		
 		for (int i = 0; i < next->expected_len; i++) {
-			printf("%s, ", symbol_list[next->expected[i]]);
+			fprintf(stderr, "%s, ", symbol_list[next->expected[i]]);
 		}
+		fprintf(stderr, "\n");
 		
 		next = next->next;
 	}
@@ -451,6 +460,7 @@ void rule_stmt(Parser *parser, Terminal t)
 		parser->panic_mode_flag = false;
 	}
 	else {
+		parser_error_list_insert(parser, t, ARRAY_LEN(first), first);
 		panic(parser);
 	}
 }
@@ -479,6 +489,7 @@ void rule_elsestmt(Parser *parser, Terminal t)
 		parser->panic_mode_flag = false;
 	}
 	else {
+		parser_error_list_insert(parser, t, ARRAY_LEN(first), first);
 		panic(parser);
 	}
 }
@@ -507,6 +518,7 @@ void rule_localdecl(Parser *parser, Terminal t)
 		parser->panic_mode_flag = false;
 	}
 	else {
+		parser_error_list_insert(parser, t, ARRAY_LEN(first), first);
 		panic(parser);
 	}
 }
@@ -545,6 +557,7 @@ void rule_exps(Parser *parser, Terminal t)
 		parser->panic_mode_flag = false;
 	}
 	else {
+		parser_error_list_insert(parser, t, ARRAY_LEN(first), first);
 		panic(parser);
 	}
 }
@@ -598,6 +611,7 @@ void rule_exp(Parser *parser, Terminal t)
 		parser->panic_mode_flag = false;
 	}
 	else {
+		parser_error_list_insert(parser, t, ARRAY_LEN(first), first);
 		panic(parser);
 	}
 }
@@ -617,6 +631,7 @@ void rule_exps_(Parser *parser, Terminal t)
 		parser->panic_mode_flag = false;
 	}
 	else {
+		parser_error_list_insert(parser, t, ARRAY_LEN(first), first);
 		panic(parser);
 	}
 }
@@ -636,6 +651,7 @@ void rule_exp_(Parser *parser, Terminal t)
 		parser->panic_mode_flag = false;
 	}
 	else {
+		parser_error_list_insert(parser, t, ARRAY_LEN(first), first);
 		panic(parser);
 	}
 }
@@ -664,6 +680,7 @@ void rule_loopexp(Parser *parser, Terminal t)
 		parser->panic_mode_flag = false;
 	}
 	else {
+		parser_error_list_insert(parser, t, ARRAY_LEN(first), first);
 		panic(parser);
 	}
 }
@@ -683,6 +700,7 @@ void rule_loopexp_(Parser *parser, Terminal t)
 		parser->panic_mode_flag = false;
 	}
 	else {
+		parser_error_list_insert(parser, t, ARRAY_LEN(first), first);
 		panic(parser);
 	}
 }
@@ -702,6 +720,7 @@ void rule_returnexp(Parser *parser, Terminal t)
 		parser->panic_mode_flag = false;
 	}
 	else {
+		parser_error_list_insert(parser, t, ARRAY_LEN(first), first);
 		panic(parser);
 	}
 }
@@ -721,6 +740,7 @@ void rule_table(Parser *parser, Terminal t)
 		parser->panic_mode_flag = false;
 	}
 	else {
+		parser_error_list_insert(parser, t, ARRAY_LEN(first), first);
 		panic(parser);
 	}
 }
@@ -740,6 +760,7 @@ void rule_fields(Parser *parser, Terminal t)
 		parser->panic_mode_flag = false;
 	}
 	else {
+		parser_error_list_insert(parser, t, ARRAY_LEN(first), first);
 		panic(parser);
 	}
 }
@@ -768,6 +789,7 @@ void rule_field(Parser *parser, Terminal t)
 		parser->panic_mode_flag = false;
 	}
 	else {
+		parser_error_list_insert(parser, t, ARRAY_LEN(first), first);
 		panic(parser);
 	}
 }
@@ -787,6 +809,7 @@ void rule_fields_(Parser *parser, Terminal t)
 		parser->panic_mode_flag = false;
 	}
 	else {
+		parser_error_list_insert(parser, t, ARRAY_LEN(first), first);
 		panic(parser);
 	}
 }
@@ -825,6 +848,7 @@ void rule_vars(Parser *parser, Terminal t)
 		parser->panic_mode_flag = false;
 	}
 	else {
+		parser_error_list_insert(parser, t, ARRAY_LEN(first), first);
 		panic(parser);
 	}
 }
@@ -844,13 +868,16 @@ void rule_vars_(Parser *parser, Terminal t)
 		parser->panic_mode_flag = false;
 	}
 	else {
+		parser_error_list_insert(parser, t, ARRAY_LEN(first), first);
 		panic(parser);
 	}
 }
 void rule_var(Parser *parser, Terminal t)
 {
 	Terminal first[] = { NAME, LPAREN };
-	Terminal follow[] = { COMMA, EQ };
+	Terminal follow[] = { COMMA, EQ,
+		OR, AND, GT, LT, GE, LE, NE, DEQ, CAT, ADD, SUB, MUL, DIV, POW, COMMA, SEMICOLON, DO, THEN, RPAREN, RBRACKET, RBRACE
+	};
 	
 	if (is_in_array(t, first, ARRAY_LEN(first))) {
 		symbol_stack_pop(parser);
@@ -872,13 +899,16 @@ void rule_var(Parser *parser, Terminal t)
 		parser->panic_mode_flag = false;
 	}
 	else {
+		parser_error_list_insert(parser, t, ARRAY_LEN(first), first);
 		panic(parser);
 	}
 }
 void rule_var_(Parser *parser, Terminal t)
 {
 	Terminal first[] = { LBRACKET };
-	Terminal follow[] = { COMMA, EQ };
+	Terminal follow[] = { COMMA, EQ,
+		OR, AND, GT, LT, GE, LE, NE, DEQ, CAT, ADD, SUB, MUL, DIV, POW, COMMA, SEMICOLON, DO, THEN, RPAREN, RBRACKET, RBRACE
+	};
 	
 	if (is_in_array(t, first, ARRAY_LEN(first))) {
 		symbol_stack_pop(parser);
@@ -891,6 +921,7 @@ void rule_var_(Parser *parser, Terminal t)
 		parser->panic_mode_flag = false;
 	}
 	else {
+		parser_error_list_insert(parser, t, ARRAY_LEN(first), first);
 		panic(parser);
 	}
 }
@@ -910,6 +941,7 @@ void rule_fnbody(Parser *parser, Terminal t)
 		parser->panic_mode_flag = false;
 	}
 	else {
+		parser_error_list_insert(parser, t, ARRAY_LEN(first), first);
 		panic(parser);
 	}
 }
@@ -929,6 +961,7 @@ void rule_fnexp(Parser *parser, Terminal t)
 		parser->panic_mode_flag = false;
 	}
 	else {
+		parser_error_list_insert(parser, t, ARRAY_LEN(first), first);
 		panic(parser);
 	}
 }
@@ -967,6 +1000,7 @@ void rule_names(Parser *parser, Terminal t)
 		parser->panic_mode_flag = false;
 	}
 	else {
+		parser_error_list_insert(parser, t, ARRAY_LEN(first), first);
 		panic(parser);
 	}
 }
@@ -986,6 +1020,7 @@ void rule_names_(Parser *parser, Terminal t)
 		parser->panic_mode_flag = false;
 	}
 	else {
+		parser_error_list_insert(parser, t, ARRAY_LEN(first), first);
 		panic(parser);
 	}
 }

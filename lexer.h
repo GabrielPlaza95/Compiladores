@@ -10,6 +10,7 @@ typedef enum symbol TokenClass;
 
 typedef struct {
 	TokenClass class;
+	int line;
 	int len;
 	char *str;
 }

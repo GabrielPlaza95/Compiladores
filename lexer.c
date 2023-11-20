@@ -63,13 +63,14 @@ State state_deq;
 
 State state_ne_0;
 State state_ne_1;
+
+State state_cat_0;
+State state_cat_1;
+
 State state_lt;
 State state_le;
 State state_gt;
 State state_ge;
-
-State state_dot;
-State state_cat;
 
 State state_op_delim;
 
@@ -141,7 +142,7 @@ Token lexer_token_next(Lexer *lexer, char **start)
 	State *current_state = &state_init;
 
 	while ((c = (*start)[token_len++]) != '\0' || current_state != &state_init) {
-		//printf("\nstart: %c\ncurrent: %c\nlen: %i\n", **start, c, token_len);
+		//printf("\nstart: %c\ncurrent: %c\nlen: %i\n", **start, c, token_len + 1);
 
 		out = current_state(lexer, *start, token_len);
 
@@ -154,13 +155,16 @@ Token lexer_token_next(Lexer *lexer, char **start)
 			continue;
 		}
 
-		if (out.token.class != 0) {
+		if (out.token.class != NONE) {
 			*start += out.token.len;
+
+			out.token.line = lexer->current_line;
 
 			return out.token;
 		}
 	}
 
+	out.token.line = lexer->current_line;
 	out.token.class = NONE;
 	return out.token;
 }
@@ -180,14 +184,14 @@ void lexer_error_list_print(Lexer *lexer)
 			fprintf(stderr, "Caractere inválido '%c' na linha %i\n", next->str[0], next->line);
 			break;
 		case INVALID_TOKEN:
-			fprintf(stderr, "Token inválido ~ na linha %i\n", next->line);
+			fprintf(stderr, "Token inválido '%c' na linha %i\n", next->str[0], next->line);
 			break;
 		case INVALID_ESCAPE_SEQUENCE:
 			int len = strlen(next->str);
 			fprintf(stderr, "Sequência de escape inválida \\%c na linha %i\n", next->str[len - 1], next->line);
 			break;
 		case UNTERMINATED_STRING:
-			fprintf(stderr, "Cadeia de caracteres na linha %i e não encerrada\n", next->line);
+			fprintf(stderr, "Cadeia de caracteres na linha %i não encerrada\n", next->line);
 			break;
 		case UNTERMINATED_COMMENT:
 			fprintf(stderr, "Comentário de múltiplas linhas aberto na linha %i e não encerrado\n", next->line);
@@ -244,7 +248,7 @@ void lexer_error_list_insert(Lexer *lexer, ErrorClass error_class, char *start, 
 	next->next = NULL;
 	next->error_class = error_class;
 	next->line = lexer->current_line;
-	next->str = malloc(token_len);
+	next->str = malloc(token_len + 1);
 	next->str[token_len] = '\0';
 	strncpy(next->str, start, token_len);
 
@@ -273,7 +277,7 @@ char * symbol_table_insert(Lexer *lexer, char *symbol, int len)
 	next->left = NULL;
 	next->right = NULL;
 	next->symbol = malloc(len + 1);
-	next->symbol[len + 1] = '\0';
+	next->symbol[len] = '\0';
 	strncpy(next->symbol, symbol, len);
 
 	if (lexer->symbol_table == NULL) {
@@ -360,11 +364,11 @@ StateMachineOutput state_init(Lexer *lexer, char *start, int token_len)
 	case '>':
 		out.state = &state_gt;
 		break;
+	case '.':
+		out.state = &state_cat_0;
+		break;
 	case '~':
 		out.state = &state_ne_0;
-		break;
-	case '.':
-		out.state = &state_dot;
 		break;
 	case '"':
 		out.state = &state_str_0;
@@ -377,7 +381,7 @@ StateMachineOutput state_init(Lexer *lexer, char *start, int token_len)
 			out.state = &state_init;
 			out.token = TOKEN_SKIP;
 		}
-		else if (strchr("+*/%(){}[];,:", c) != NULL) {
+		else if (strchr("=<>+-*/%^()[]{},;", c) != NULL) {
 			out.state = &state_op_delim;
 		}
 		else if (is_digit(c)) {
@@ -430,7 +434,7 @@ StateMachineOutput state_ne_0(Lexer *lexer, char *start, int token_len)
 	else {
 		out.state = &state_ne_1;
 	}
-	out.token = TOKEN_NONE;
+	out.token = TOKEN_SKIP;
 
 	return out;
 }
@@ -439,6 +443,33 @@ StateMachineOutput state_ne_1(Lexer *lexer, char *start, int token_len)
 {
 	StateMachineOutput out = {
 		.token.class = NE,
+		.token.len = 2
+	};
+
+	return out;
+};
+
+StateMachineOutput state_cat_0(Lexer *lexer, char *start, int token_len)
+{
+	StateMachineOutput out;
+	char c = start[token_len - 1];
+
+	if (c != '.') {
+		out.state = &state_init;
+		lexer_error_list_insert(lexer, INVALID_TOKEN, start, 1);
+	}
+	else {
+		out.state = &state_cat_1;
+	}
+	out.token = TOKEN_SKIP;
+
+	return out;
+};
+
+StateMachineOutput state_cat_1(Lexer *lexer, char *start, int token_len)
+{
+	StateMachineOutput out = {
+		.token.class = CAT,
 		.token.len = 2
 	};
 
@@ -481,27 +512,6 @@ StateMachineOutput state_ge(Lexer *lexer, char *start, int token_len)
 {
 	StateMachineOutput out = {
 		.token.class = GE,
-		.token.len = 2
-	};
-
-	return out;
-};
-
-StateMachineOutput state_dot(Lexer *lexer, char *start, int token_len)
-{
-	StateMachineOutput out;
-	char c = start[token_len - 1];
-
-	out.state = (c == '.') ? &state_cat : &state_op_delim;
-	out.token = TOKEN_NONE;
-
-	return out;
-}
-
-StateMachineOutput state_cat(Lexer *lexer, char *start, int token_len)
-{
-	StateMachineOutput out = {
-		.token.class = CAT,
 		.token.len = 2
 	};
 

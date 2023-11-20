@@ -147,25 +147,29 @@ int main(int argc, char *argv[])
 	char *code = read_file(argv[1]);
 	
 	if (code == NULL) {
-		fprintf(stderr, "Erro: arquivo não encontrado\n");
+		fprintf(stderr, "Erro: arquivo não pode ser lido\n");
 		exit(-1);
 	}
 	
 	token = lexer_token_next(lexer, &code);
-	//parser->current_line = lexer->current_line;
+	parser->current_line = token.line;
 	
 	do {
+		if (token.class == NONE)
+			break;
+		
 		symbol = symbol_stack_peek(parser);
 		
 		symbol_stack_print(parser);
 		lexer_token_print(token);
 		//printf("%s\n", code);
+		printf("\n");
 
 		if (is_terminal(symbol) || symbol == NONE) {
 			if (symbol == token.class) {
 				symbol_stack_pop(parser);
 				token = lexer_token_next(lexer, &code);
-				//parser->current_line = lexer->current_line;
+				parser->current_line = token.line;
 			}
 			else {
 				parser_error_list_insert(parser, token.class, 1, &symbol);
@@ -174,21 +178,24 @@ int main(int argc, char *argv[])
 			continue;
 		}
 		
-		if (parser->panic_mode_flag == true)
+		if (parser->panic_mode_flag == true) {
 			token = lexer_token_next(lexer, &code);
-
-		//parser->current_line = lexer->current_line;
+			parser->current_line = token.line;
+		}
 
 		Rule *rule = parser_table[symbol - BLOCK];
 		rule(parser, token.class);
 	}
-	while (symbol != NONE && token.class != NONE);
+	while (symbol != NONE);
 
 	lexer_error_list_print(lexer);
 	parser_error_list_print(parser);
 	
+	if (!lexer_error_detected(lexer))
+		printf("Não foram detectados erros léxicos\n");
+	
 	if (!parser_error_detected(parser))
-		printf("Program parsed with no errors\n");
+		printf("Não foram detectados erros sintáticos\n");
 }
 
 Parser * parser_init(void)
@@ -222,7 +229,7 @@ void panic(Parser *parser)
 
 bool parser_error_detected(Parser *parser)
 {
-	return parser->error_flag = true;
+	return parser->error_flag == true;
 }
 
 void parser_error_list_insert(Parser *parser, Symbol received, int expected_len, Symbol *expected)
@@ -266,12 +273,22 @@ void parser_error_list_print(Parser *parser)
 	ParserErrorListNode *next = parser->error_list;
 
 	while (next != NULL) {
-		fprintf(stderr, "Recebeu %s mas esperava ", symbol_list[next->received]);
-		
-		for (int i = 0; i < next->expected_len; i++) {
-			fprintf(stderr, "%s, ", symbol_list[next->expected[i]]);
+		fprintf(stderr, "Recebeu '%s' mas esperava '%s'", symbol_list[next->received], symbol_list[next->expected[0]]);
+
+		if (next->expected_len > 2) {
+			for (int i = 1; i < next->expected_len - 1; i++) {
+				fprintf(stderr, ", '%s'", symbol_list[next->expected[i]]);
+			}
 		}
-		fprintf(stderr, "\n");
+		
+		if (next->expected_len > 0) {
+			fprintf(stderr, " ou '%s'", symbol_list[next->expected[next->expected_len - 1]]);
+		}
+		else {
+			fprintf(stderr, "'%s'", symbol_list[next->expected[0]]);
+		}
+		
+		fprintf(stderr, " na linha %d\n", next->line);
 		
 		next = next->next;
 	}
@@ -355,7 +372,7 @@ void symbol_stack_print(Parser *parser)
 		printf("%s ", symbol_list[symbol]);
 	}
 	
-	puts("\n");
+	printf("\n");
 }
 
 bool is_terminal(Symbol symbol)
@@ -367,7 +384,7 @@ char * read_file(char *file_name)
 {
 	FILE *file = fopen(file_name, "r");
 	long f_size;
-	char *code, *cur;
+	char *code, *cur, c;
 
 	if (file == NULL)
 		return NULL;
@@ -376,11 +393,16 @@ char * read_file(char *file_name)
 	f_size = ftell(file);
 	fseek(file, 0, SEEK_SET);
 
-	code = malloc(f_size);
+	code = malloc(f_size + 1);
 	cur = code;
 
-	while ((*cur++ = fgetc(file)) != EOF);
-	*--cur = '\0';
+	while ((c = fgetc(file)) != EOF)
+		*cur++ = c;
+	
+	if (ferror(file))
+		return NULL;
+	
+	*cur = '\0';
 
 	return code;
 }
@@ -397,7 +419,7 @@ bool is_in_array(Symbol symbol, Symbol *arr, int n)
 void rule_block(Parser *parser, Terminal t)
 {
 	Terminal first[] = { DO, WHILE, BREAK, IF, FOR, LOCAL, RETURN, NAME, FUNCTION, LPAREN };
-	Terminal follow[] = { NONE, ELSEIF, ELSE, END };
+	Terminal follow[] = { ELSEIF, ELSE, END };
 	
 	if (is_in_array(t, first, ARRAY_LEN(first))) {
 		symbol_stack_pop(parser);
@@ -913,7 +935,7 @@ void rule_var_(Parser *parser, Terminal t)
 	if (is_in_array(t, first, ARRAY_LEN(first))) {
 		symbol_stack_pop(parser);
 
-		symbol_stack_push_rule(parser, LBRACKET, EXP, RBRACKET, VAR);
+		symbol_stack_push_rule(parser, LBRACKET, EXP, RBRACKET, VAR_);
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);

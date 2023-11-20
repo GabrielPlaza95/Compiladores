@@ -429,12 +429,13 @@ StateMachineOutput state_ne_0(Lexer *lexer, char *start, int token_len)
 
 	if (c != '=') {
 		out.state = &state_init;
+		out.token = TOKEN_SKIP;
 		lexer_error_list_insert(lexer, INVALID_TOKEN, start, token_len);
 	}
 	else {
 		out.state = &state_ne_1;
+		out.token = TOKEN_NONE;
 	}
-	out.token = TOKEN_SKIP;
 
 	return out;
 }
@@ -456,12 +457,13 @@ StateMachineOutput state_cat_0(Lexer *lexer, char *start, int token_len)
 
 	if (c != '.') {
 		out.state = &state_init;
+		out.token = TOKEN_SKIP;
 		lexer_error_list_insert(lexer, INVALID_TOKEN, start, 1);
 	}
 	else {
 		out.state = &state_cat_1;
+		out.token = TOKEN_NONE;
 	}
-	out.token = TOKEN_SKIP;
 
 	return out;
 };

@@ -1,28 +1,30 @@
-ab = a.b; -- error
-ab = a~b; -- error
+
+ab = a.b; -- erro
+ab = a~b; -- erro
 
 arr = {
-	x { id = "X", [1] = a - 1, [n - 1] = 0 }, -- erro
-	y = { id = "Y", [b] = b - 1, [n - 1] = 0 },
+	x = { id = "X", [1] = a - 1, [n - 1] = 0 },
+	y = { id = "Y", [b] = b - 1, [n - 1] = 0 }
 };
 
 function f(a, b) do
 	local n = 10;
 
 	if arr[x] == nil or arr[y] == nil then
-		return
-	end
+		return;
+	end;
 	
 	for a, b in arr[x], arr[y] do
-		if a == nil or b == nil do -- error
-			break
-		end
+		if a == nil or b == nil do -- erro
+			break -- erro
+		end;
 	
 		while a < 1 do
-			a = a + b;
-		end
-	end
-end
+			a = a + b -- erro
+		end;
+	end;
+end;
 
 ex = 1 + 2 - 3 * 4 / 5 % 6 ^ 7 .. 8;
 pred = a ~= b == c <= d >= e < f > g and h or i;
+

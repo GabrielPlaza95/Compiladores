@@ -121,7 +121,7 @@ char * reserved_id_list[RESERVED_ID_N] = {
 Lexer * lexer_init(void)
 {
 	Lexer *lexer = malloc(sizeof *lexer);
-	
+
 	lexer->symbol_table = NULL;
 	lexer->error_list = NULL;
 
@@ -329,9 +329,9 @@ TokenClass id_class(char *symbol)
 TokenClass op_delim_class(char symbol)
 {
 	//char op_delim[] = "=<>+-*/%^.()[]{},:;";
-	
+
 	char op_delim[] = "=<>+-*/%^()[]{},;";
-	
+
 	return (strchr(op_delim, symbol) - op_delim) + EQ;
 }
 
@@ -523,7 +523,7 @@ StateMachineOutput state_ge(Lexer *lexer, char *start, int token_len)
 StateMachineOutput state_op_delim(Lexer *lexer, char *start, int token_len)
 {
 	StateMachineOutput out;
-	
+
 	out.token.len = 1;
 	out.token.str = symbol_table_insert(lexer, start, out.token.len);
 	out.token.class = op_delim_class(*out.token.str);
@@ -591,7 +591,7 @@ StateMachineOutput state_id_1(Lexer *lexer, char *start, int token_len)
 	out.token.len = token_len;
 	out.token.str = symbol_table_insert(lexer, start, out.token.len);
 	out.token.class = id_class(out.token.str);
-	
+
 	return out;
 };
 

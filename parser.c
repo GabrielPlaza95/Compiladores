@@ -11,8 +11,8 @@
 #define NON_TERMINAL_N 26
 #define INITIAL_SYMBOL_STACK_CAP 256
 
-#define ARRAY_LEN(arr) (sizeof(arr) / sizeof(*arr))
-#define symbol_stack_push_rule(parser, ...) symbol_stack_push_rule_n(parser, sizeof ((Symbol[]) {__VA_ARGS__}) / sizeof (Symbol), __VA_ARGS__)
+#define ARRAY_LEN(arr) (sizeof (arr) / sizeof (*arr))
+#define symbol_stack_push_rule(parser, ...) symbol_stack_push_rule_n(parser, sizeof ((Symbol[]) { __VA_ARGS__ }) / sizeof (Symbol), __VA_ARGS__)
 
 typedef Symbol Terminal;
 typedef Symbol Nonterminal;
@@ -97,7 +97,7 @@ char *symbol_list[] = {
 	"(", ")", "[", "]", "{", "}", ",", ";",
 	"==", "~=", "<=", ">=", "..", "<num>", "<string>", "<name>",
 	"do", "if", "in", "or", "and", "end", "for", "nil", "not",
-	"else", "then", "true", "break", "false", "local", "until", "while", "elseif", "repeat", "return", "function", 
+	"else", "then", "true", "break", "false", "local", "until", "while", "elseif", "repeat", "return", "function",
 
 	"BLOCK", "STMT", "ELSESTMT", "LOCALDECL", "FNDECL", "EXPS", "EXP", "EXPS'", "EXP'", "LOOPEXP", "LOOPEXP'", "RETURNEXP",
 	"TABLE", "FIELDS", "FIELD", "FIELDS'", "BINOP", "VARS", "VARS'", "VAR", "VAR'", "FNBODY", "FNEXP", "FNPARAMS", "NAMES", "NAMES'"
@@ -145,25 +145,21 @@ int main(int argc, char *argv[])
 	}
 
 	char *code = read_file(argv[1]);
-	
+
 	if (code == NULL) {
 		fprintf(stderr, "Erro: arquivo não pode ser lido\n");
 		exit(-1);
 	}
-	
+
 	token = lexer_token_next(lexer, &code);
 	parser->current_line = token.line;
-	
+
 	do {
 		if (token.class == NONE)
 			break;
-		
+
 		symbol = symbol_stack_peek(parser);
-		
-		symbol_stack_print(parser);
-		lexer_token_print(token);
-		//printf("%s\n", code);
-		printf("\n");
+		//symbol_stack_print(parser);
 
 		if (is_terminal(symbol) || symbol == NONE) {
 			if (symbol == token.class) {
@@ -177,7 +173,7 @@ int main(int argc, char *argv[])
 			}
 			continue;
 		}
-		
+
 		if (parser->panic_mode_flag == true) {
 			token = lexer_token_next(lexer, &code);
 			parser->current_line = token.line;
@@ -190,10 +186,10 @@ int main(int argc, char *argv[])
 
 	lexer_error_list_print(lexer);
 	parser_error_list_print(parser);
-	
+
 	if (!lexer_error_detected(lexer))
 		printf("Não foram detectados erros léxicos\n");
-	
+
 	if (!parser_error_detected(parser))
 		printf("Não foram detectados erros sintáticos\n");
 }
@@ -201,7 +197,7 @@ int main(int argc, char *argv[])
 Parser * parser_init(void)
 {
 	Parser *parser = malloc(sizeof *parser);
-	
+
 	parser->symbol_stack = symbol_stack_init();
 	parser->error_list = NULL;
 	parser->error_flag = false;
@@ -215,12 +211,12 @@ Parser * parser_init(void)
 void panic(Parser *parser)
 {
 	Symbol symbol;
-	
+
 	parser->panic_mode_flag = true;
 	parser->error_flag = true;
-	
+
 	symbol = symbol_stack_peek(parser);
-	
+
 	while (is_terminal(symbol)) {
 		symbol_stack_pop(parser);
 		symbol = symbol_stack_peek(parser);
@@ -236,7 +232,7 @@ void parser_error_list_insert(Parser *parser, Symbol received, int expected_len,
 {
 	if (parser->panic_mode_flag == true)
 		return;
-	
+
 	ParserErrorListNode *head = parser->error_list;
 	ParserErrorListNode *next;
 
@@ -244,17 +240,17 @@ void parser_error_list_insert(Parser *parser, Symbol received, int expected_len,
 
 	next = malloc(sizeof *next);
 	next->next = NULL;
-	
+
 	next->line = parser->current_line;
 
 	next->received = received;
-	
+
 	next->expected_len = expected_len;
-	
+
 	size_t buf_size = sizeof (*next->expected) * next->expected_len;
-	
+
 	next->expected = malloc(buf_size);
-	
+
 	memcpy(next->expected, expected, buf_size);
 
 	if (parser->error_list == NULL) {
@@ -269,27 +265,22 @@ void parser_error_list_insert(Parser *parser, Symbol received, int expected_len,
 }
 
 void parser_error_list_print(Parser *parser)
-{	
+{
 	ParserErrorListNode *next = parser->error_list;
 
 	while (next != NULL) {
 		fprintf(stderr, "Recebeu '%s' mas esperava '%s'", symbol_list[next->received], symbol_list[next->expected[0]]);
 
 		if (next->expected_len > 2) {
-			for (int i = 1; i < next->expected_len - 1; i++) {
+			for (int i = 1; i < next->expected_len - 1; i++)
 				fprintf(stderr, ", '%s'", symbol_list[next->expected[i]]);
-			}
 		}
-		
-		if (next->expected_len > 0) {
+
+		if (next->expected_len > 1)
 			fprintf(stderr, " ou '%s'", symbol_list[next->expected[next->expected_len - 1]]);
-		}
-		else {
-			fprintf(stderr, "'%s'", symbol_list[next->expected[0]]);
-		}
-		
+
 		fprintf(stderr, " na linha %d\n", next->line);
-		
+
 		next = next->next;
 	}
 }
@@ -297,28 +288,28 @@ void parser_error_list_print(Parser *parser)
 SymbolStack symbol_stack_init(void)
 {
 	SymbolStack stack;
-	
+
 	stack.cap = INITIAL_SYMBOL_STACK_CAP;
 	stack.arr = malloc(stack.cap * sizeof *stack.arr);
-	
+
 	stack.arr[0] = NONE;
 	stack.arr[1] = BLOCK;
 	stack.len = 2;
-	
+
 	return stack;
 }
 
 void symbol_stack_push(Parser *parser, Symbol symbol)
 {
 	SymbolStack *stack;
-	
+
 	stack = &parser->symbol_stack;
-	
+
 	while (stack->len >= stack->cap) {
 		stack->cap *= 2;
 		stack->arr = realloc(stack->arr, stack->cap * sizeof *stack->arr);
 	}
-	
+
 	stack->arr[stack->len++] = symbol;
 }
 
@@ -334,7 +325,7 @@ void symbol_stack_push_rule_n(Parser *parser, int len,  ...)
 void symbol_stack_push_rule_v(Parser *parser, int len, va_list args)
 {
 	Symbol symbol = va_arg(args, Symbol);
-	
+
 	if (len <= 0)
 		return;
 
@@ -345,18 +336,18 @@ void symbol_stack_push_rule_v(Parser *parser, int len, va_list args)
 Symbol symbol_stack_peek(Parser *parser)
 {
 	SymbolStack *stack;
-	
+
 	stack = &parser->symbol_stack;
-	
+
 	return stack->arr[stack->len - 1];
 }
 
 Symbol symbol_stack_pop(Parser *parser)
 {
 	SymbolStack *stack;
-	
+
 	stack = &parser->symbol_stack;
-	
+
 	return stack->arr[--stack->len];
 }
 
@@ -364,14 +355,14 @@ void symbol_stack_print(Parser *parser)
 {
 	SymbolStack *stack;
 	Symbol symbol;
-	
+
 	stack = &parser->symbol_stack;
-	
+
 	for (int i = 0; i < stack->len; i++) {
 		symbol = stack->arr[i];
 		printf("%s ", symbol_list[symbol]);
 	}
-	
+
 	printf("\n");
 }
 
@@ -398,10 +389,10 @@ char * read_file(char *file_name)
 
 	while ((c = fgetc(file)) != EOF)
 		*cur++ = c;
-	
+
 	if (ferror(file))
 		return NULL;
-	
+
 	*cur = '\0';
 
 	return code;
@@ -412,16 +403,16 @@ bool is_in_array(Symbol symbol, Symbol *arr, int n)
 	for (int i = 0; i < n; i++)
 		if (symbol == arr[i])
 			return true;
-	
+
 	return false;
 }
 
 void rule_block(Parser *parser, Terminal t)
 {
 	Terminal first[] = { DO, WHILE, BREAK, IF, FOR, LOCAL, RETURN, NAME, FUNCTION, LPAREN };
-	Terminal follow[] = { ELSEIF, ELSE, END };
-	
-	if (is_in_array(t, first, ARRAY_LEN(first))) {
+	Terminal follow[] = { NONE, ELSEIF, ELSE, END };
+
+	if (is_in_array(t, first, ARRAY_LEN(first)) && parser->panic_mode_flag == false) {
 		symbol_stack_pop(parser);
 		symbol_stack_push_rule(parser, STMT, SEMICOLON, BLOCK);
 	}
@@ -439,16 +430,16 @@ void rule_stmt(Parser *parser, Terminal t)
 {
 	Terminal first[] = { DO, WHILE, BREAK, IF, FOR, LOCAL, RETURN, NAME, FUNCTION, LPAREN };
 	Terminal follow[] = { SEMICOLON };
-	
-	if (is_in_array(t, first, ARRAY_LEN(first))) {
+
+	if (is_in_array(t, first, ARRAY_LEN(first)) && parser->panic_mode_flag == false) {
 		symbol_stack_pop(parser);
-		
+
 		switch (t) {
 		case DO:
 			symbol_stack_push_rule(parser, DO, BLOCK, END);
 			break;
 		case WHILE:
-			symbol_stack_push_rule(parser, WHILE, EXP, DO, BLOCK, DO, END);
+			symbol_stack_push_rule(parser, WHILE, EXP, DO, BLOCK, END);
 			break;
 		case BREAK:
 			symbol_stack_push_rule(parser, BREAK);
@@ -457,7 +448,7 @@ void rule_stmt(Parser *parser, Terminal t)
 			symbol_stack_push_rule(parser, IF, EXP, THEN, BLOCK, ELSESTMT, END);
 			break;
 		case FOR:
-			symbol_stack_push_rule(parser, FOR, LOOPEXP, DO, BLOCK, END);
+			symbol_stack_push_rule(parser, FOR, NAME, LOOPEXP, DO, BLOCK, END);
 			break;
 		case LOCAL:
 			symbol_stack_push_rule(parser, LOCAL, LOCALDECL);
@@ -478,7 +469,7 @@ void rule_stmt(Parser *parser, Terminal t)
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
-		
+
 		parser->panic_mode_flag = false;
 	}
 	else {
@@ -490,10 +481,10 @@ void rule_elsestmt(Parser *parser, Terminal t)
 {
 	Terminal first[] = { ELSEIF, ELSE };
 	Terminal follow[] = { END };
-	
-	if (is_in_array(t, first, ARRAY_LEN(first))) {
+
+	if (is_in_array(t, first, ARRAY_LEN(first)) && parser->panic_mode_flag == false) {
 		symbol_stack_pop(parser);
-		
+
 		switch (t) {
 		case ELSEIF:
 			symbol_stack_push_rule(parser, ELSEIF, EXP, THEN, BLOCK, ELSESTMT);
@@ -507,7 +498,7 @@ void rule_elsestmt(Parser *parser, Terminal t)
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
-		
+
 		parser->panic_mode_flag = false;
 	}
 	else {
@@ -519,10 +510,10 @@ void rule_localdecl(Parser *parser, Terminal t)
 {
 	Terminal first[] = { FUNCTION, NAME };
 	Terminal follow[] = { SEMICOLON };
-	
-	if (is_in_array(t, first, ARRAY_LEN(first))) {
+
+	if (is_in_array(t, first, ARRAY_LEN(first)) && parser->panic_mode_flag == false) {
 		symbol_stack_pop(parser);
-		
+
 		switch (t) {
 		case FUNCTION:
 			symbol_stack_push_rule(parser, FNDECL);
@@ -536,7 +527,7 @@ void rule_localdecl(Parser *parser, Terminal t)
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
-		
+
 		parser->panic_mode_flag = false;
 	}
 	else {
@@ -548,15 +539,15 @@ void rule_fndecl(Parser *parser, Terminal t)
 {
 	Terminal first[] = { FUNCTION };
 	Terminal follow[] = { SEMICOLON };
-	
-	if (is_in_array(t, first, ARRAY_LEN(first))) {
+
+	if (is_in_array(t, first, ARRAY_LEN(first)) && parser->panic_mode_flag == false) {
 		symbol_stack_pop(parser);
 
 		symbol_stack_push_rule(parser, FUNCTION, NAME, FNBODY);
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
-		
+
 		parser->panic_mode_flag = false;
 	}
 	else {
@@ -566,16 +557,16 @@ void rule_fndecl(Parser *parser, Terminal t)
 void rule_exps(Parser *parser, Terminal t)
 {
 	Terminal first[] = { NOT, SUB, NIL, TRUE, FALSE, NUM, STRING, NAME, FUNCTION, LPAREN, LBRACE };
-	Terminal follow[] = { SEMICOLON, RPAREN };
-	
-	if (is_in_array(t, first, ARRAY_LEN(first))) {
+	Terminal follow[] = { SEMICOLON, RPAREN, DO };
+
+	if (is_in_array(t, first, ARRAY_LEN(first)) && parser->panic_mode_flag == false) {
 		symbol_stack_pop(parser);
-		
+
 		symbol_stack_push_rule(parser, EXP, EXPS_);
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
-		
+
 		parser->panic_mode_flag = false;
 	}
 	else {
@@ -586,11 +577,11 @@ void rule_exps(Parser *parser, Terminal t)
 void rule_exp(Parser *parser, Terminal t)
 {
 	Terminal first[] = { NOT, SUB, NIL, TRUE, FALSE, NUM, STRING, NAME, FUNCTION, LPAREN, LBRACE };
-	Terminal follow[] = { OR, AND, GT, LT, GE, LE, NE, DEQ, CAT, ADD, SUB, MUL, DIV, POW, COMMA, SEMICOLON, DO, THEN, RPAREN, RBRACKET, RBRACE };
-	
-	if (is_in_array(t, first, ARRAY_LEN(first))) {
+	Terminal follow[] = { OR, AND, GT, LT, GE, LE, NE, DEQ, CAT, ADD, SUB, MUL, DIV, MOD, POW, COMMA, SEMICOLON, DO, THEN, RPAREN, RBRACKET, RBRACE };
+
+	if (is_in_array(t, first, ARRAY_LEN(first)) && parser->panic_mode_flag == false) {
 		symbol_stack_pop(parser);
-		
+
 		switch (t) {
 		case NOT:
 			symbol_stack_push_rule(parser, NOT, EXP, EXP_);
@@ -629,7 +620,7 @@ void rule_exp(Parser *parser, Terminal t)
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
-		
+
 		parser->panic_mode_flag = false;
 	}
 	else {
@@ -640,16 +631,16 @@ void rule_exp(Parser *parser, Terminal t)
 void rule_exps_(Parser *parser, Terminal t)
 {
 	Terminal first[] = { COMMA };
-	Terminal follow[] = { SEMICOLON };
-	
-	if (is_in_array(t, first, ARRAY_LEN(first))) {
+	Terminal follow[] = { SEMICOLON, RPAREN, DO };
+
+	if (is_in_array(t, first, ARRAY_LEN(first)) && parser->panic_mode_flag == false) {
 		symbol_stack_pop(parser);
-		
+
 		symbol_stack_push_rule(parser, COMMA, EXP, EXPS_);
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
-		
+
 		parser->panic_mode_flag = false;
 	}
 	else {
@@ -659,17 +650,17 @@ void rule_exps_(Parser *parser, Terminal t)
 }
 void rule_exp_(Parser *parser, Terminal t)
 {
-	Terminal first[] = { OR, AND, GT, LT, GE, LE, NE, DEQ, CAT, ADD, SUB, MUL, DIV, POW };
-	Terminal follow[] = { OR, AND, GT, LT, GE, LE, NE, DEQ, CAT, ADD, SUB, MUL, DIV, POW, COMMA, SEMICOLON, DO, THEN, RPAREN, RBRACKET, RBRACE };
-	
-	if (is_in_array(t, first, ARRAY_LEN(first))) {
+	Terminal first[] = { OR, AND, GT, LT, GE, LE, NE, DEQ, CAT, ADD, SUB, MUL, DIV, MOD, POW };
+	Terminal follow[] = { OR, AND, GT, LT, GE, LE, NE, DEQ, CAT, ADD, SUB, MUL, DIV, MOD, POW, COMMA, SEMICOLON, DO, THEN, RPAREN, RBRACKET, RBRACE };
+
+	if (is_in_array(t, first, ARRAY_LEN(first)) && parser->panic_mode_flag == false) {
 		symbol_stack_pop(parser);
-		
+
 		symbol_stack_push_rule(parser, BINOP, EXP);
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
-		
+
 		parser->panic_mode_flag = false;
 	}
 	else {
@@ -681,10 +672,10 @@ void rule_loopexp(Parser *parser, Terminal t)
 {
 	Terminal first[] = { EQ, COMMA };
 	Terminal follow[] = { DO };
-	
-	if (is_in_array(t, first, ARRAY_LEN(first))) {
+
+	if (is_in_array(t, first, ARRAY_LEN(first)) && parser->panic_mode_flag == false) {
 		symbol_stack_pop(parser);
-		
+
 		switch (t) {
 		case EQ:
 			symbol_stack_push_rule(parser, EQ, EXP, EXP, LOOPEXP_);
@@ -698,7 +689,7 @@ void rule_loopexp(Parser *parser, Terminal t)
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
-		
+
 		parser->panic_mode_flag = false;
 	}
 	else {
@@ -710,15 +701,15 @@ void rule_loopexp_(Parser *parser, Terminal t)
 {
 	Terminal first[] = { COMMA };
 	Terminal follow[] = { DO };
-	
-	if (is_in_array(t, first, ARRAY_LEN(first))) {
+
+	if (is_in_array(t, first, ARRAY_LEN(first)) && parser->panic_mode_flag == false) {
 		symbol_stack_pop(parser);
-		
+
 		symbol_stack_push_rule(parser, COMMA, EXP);
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
-		
+
 		parser->panic_mode_flag = false;
 	}
 	else {
@@ -730,15 +721,15 @@ void rule_returnexp(Parser *parser, Terminal t)
 {
 	Terminal first[] = { NOT, SUB, NIL, TRUE, FALSE, NUM, STRING, NAME, FUNCTION, LPAREN, LBRACE };
 	Terminal follow[] = { SEMICOLON };
-	
-	if (is_in_array(t, first, ARRAY_LEN(first))) {
+
+	if (is_in_array(t, first, ARRAY_LEN(first)) && parser->panic_mode_flag == false) {
 		symbol_stack_pop(parser);
-		
+
 		symbol_stack_push_rule(parser, EXPS);
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
-		
+
 		parser->panic_mode_flag = false;
 	}
 	else {
@@ -749,16 +740,16 @@ void rule_returnexp(Parser *parser, Terminal t)
 void rule_table(Parser *parser, Terminal t)
 {
 	Terminal first[] = { LBRACE };
-	Terminal follow[] = { OR, AND, GT, LT, GE, LE, NE, DEQ, CAT, ADD, SUB, MUL, DIV, POW, COMMA, SEMICOLON, DO, THEN, RPAREN, RBRACKET, RBRACE };
-	
-	if (is_in_array(t, first, ARRAY_LEN(first))) {
+	Terminal follow[] = { OR, AND, GT, LT, GE, LE, NE, DEQ, CAT, ADD, SUB, MUL, DIV, MOD, POW, COMMA, SEMICOLON, DO, THEN, RPAREN, RBRACKET, RBRACE };
+
+	if (is_in_array(t, first, ARRAY_LEN(first)) && parser->panic_mode_flag == false) {
 		symbol_stack_pop(parser);
-		
+
 		symbol_stack_push_rule(parser, LBRACE, FIELDS, RBRACE );
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
-		
+
 		parser->panic_mode_flag = false;
 	}
 	else {
@@ -770,15 +761,15 @@ void rule_fields(Parser *parser, Terminal t)
 {
 	Terminal first[] = { LBRACKET, NAME };
 	Terminal follow[] = { RBRACKET };
-	
-	if (is_in_array(t, first, ARRAY_LEN(first))) {
+
+	if (is_in_array(t, first, ARRAY_LEN(first)) && parser->panic_mode_flag == false) {
 		symbol_stack_pop(parser);
 
 		symbol_stack_push_rule(parser, FIELD, FIELDS_);
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
-		
+
 		parser->panic_mode_flag = false;
 	}
 	else {
@@ -790,8 +781,8 @@ void rule_field(Parser *parser, Terminal t)
 {
 	Terminal first[] = { LBRACKET, NAME };
 	Terminal follow[] = { RBRACKET };
-	
-	if (is_in_array(t, first, ARRAY_LEN(first))) {
+
+	if (is_in_array(t, first, ARRAY_LEN(first)) && parser->panic_mode_flag == false) {
 		symbol_stack_pop(parser);
 
 		switch (t) {
@@ -807,7 +798,7 @@ void rule_field(Parser *parser, Terminal t)
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
-		
+
 		parser->panic_mode_flag = false;
 	}
 	else {
@@ -819,15 +810,15 @@ void rule_fields_(Parser *parser, Terminal t)
 {
 	Terminal first[] = { COMMA };
 	Terminal follow[] = { RBRACE };
-	
-	if (is_in_array(t, first, ARRAY_LEN(first))) {
+
+	if (is_in_array(t, first, ARRAY_LEN(first)) && parser->panic_mode_flag == false) {
 		symbol_stack_pop(parser);
 
 		symbol_stack_push_rule(parser, COMMA, FIELD, FIELDS_);
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
-		
+
 		parser->panic_mode_flag = false;
 	}
 	else {
@@ -837,17 +828,17 @@ void rule_fields_(Parser *parser, Terminal t)
 }
 void rule_binop(Parser *parser, Terminal t)
 {
-	Terminal first[] = { OR, AND, GT, LT, GE, LE, NE, DEQ, CAT, ADD, SUB, MUL, DIV, POW };
+	Terminal first[] = { OR, AND, GT, LT, GE, LE, NE, DEQ, CAT, ADD, SUB, MUL, DIV, MOD, POW };
 	Terminal follow[] = { NOT, NIL, TRUE, FALSE, NUM, STRING, NAME, FUNCTION, LPAREN, LBRACE };
-	
-	if (is_in_array(t, first, ARRAY_LEN(first))) {
+
+	if (is_in_array(t, first, ARRAY_LEN(first)) && parser->panic_mode_flag == false) {
 		symbol_stack_pop(parser);
 
 		symbol_stack_push(parser, t);
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
-		
+
 		parser->panic_mode_flag = false;
 	}
 	else {
@@ -858,15 +849,15 @@ void rule_vars(Parser *parser, Terminal t)
 {
 	Terminal first[] = { NAME, LPAREN };
 	Terminal follow[] = { EQ };
-	
-	if (is_in_array(t, first, ARRAY_LEN(first))) {
+
+	if (is_in_array(t, first, ARRAY_LEN(first)) && parser->panic_mode_flag == false) {
 		symbol_stack_pop(parser);
 
 		symbol_stack_push_rule(parser, VAR, VARS_);
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
-		
+
 		parser->panic_mode_flag = false;
 	}
 	else {
@@ -878,15 +869,15 @@ void rule_vars_(Parser *parser, Terminal t)
 {
 	Terminal first[] = { COMMA };
 	Terminal follow[] = { EQ };
-	
-	if (is_in_array(t, first, ARRAY_LEN(first))) {
+
+	if (is_in_array(t, first, ARRAY_LEN(first)) && parser->panic_mode_flag == false) {
 		symbol_stack_pop(parser);
 
 		symbol_stack_push_rule(parser, COMMA, VAR, VARS_);
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
-		
+
 		parser->panic_mode_flag = false;
 	}
 	else {
@@ -897,11 +888,9 @@ void rule_vars_(Parser *parser, Terminal t)
 void rule_var(Parser *parser, Terminal t)
 {
 	Terminal first[] = { NAME, LPAREN };
-	Terminal follow[] = { COMMA, EQ,
-		OR, AND, GT, LT, GE, LE, NE, DEQ, CAT, ADD, SUB, MUL, DIV, POW, COMMA, SEMICOLON, DO, THEN, RPAREN, RBRACKET, RBRACE
-	};
-	
-	if (is_in_array(t, first, ARRAY_LEN(first))) {
+	Terminal follow[] = { EQ, OR, AND, GT, LT, GE, LE, NE, DEQ, CAT, ADD, SUB, MUL, DIV, MOD, POW, COMMA, SEMICOLON, DO, THEN, RPAREN, RBRACKET, RBRACE };
+
+	if (is_in_array(t, first, ARRAY_LEN(first)) && parser->panic_mode_flag == false) {
 		symbol_stack_pop(parser);
 
 		switch (t) {
@@ -917,7 +906,7 @@ void rule_var(Parser *parser, Terminal t)
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
-		
+
 		parser->panic_mode_flag = false;
 	}
 	else {
@@ -928,18 +917,16 @@ void rule_var(Parser *parser, Terminal t)
 void rule_var_(Parser *parser, Terminal t)
 {
 	Terminal first[] = { LBRACKET };
-	Terminal follow[] = { COMMA, EQ,
-		OR, AND, GT, LT, GE, LE, NE, DEQ, CAT, ADD, SUB, MUL, DIV, POW, COMMA, SEMICOLON, DO, THEN, RPAREN, RBRACKET, RBRACE
-	};
-	
-	if (is_in_array(t, first, ARRAY_LEN(first))) {
+	Terminal follow[] = { EQ, OR, AND, GT, LT, GE, LE, NE, DEQ, CAT, ADD, SUB, MUL, DIV, MOD, POW, COMMA, SEMICOLON, DO, THEN, RPAREN, RBRACKET, RBRACE };
+
+	if (is_in_array(t, first, ARRAY_LEN(first)) && parser->panic_mode_flag == false) {
 		symbol_stack_pop(parser);
 
 		symbol_stack_push_rule(parser, LBRACKET, EXP, RBRACKET, VAR_);
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
-		
+
 		parser->panic_mode_flag = false;
 	}
 	else {
@@ -950,16 +937,16 @@ void rule_var_(Parser *parser, Terminal t)
 void rule_fnbody(Parser *parser, Terminal t)
 {
 	Terminal first[] = { LPAREN };
-	Terminal follow[] = { OR, AND, GT, LT, GE, LE, NE, DEQ, CAT, ADD, SUB, MUL, DIV, POW, COMMA, SEMICOLON, DO, THEN, RPAREN, RBRACKET, RBRACE };
-	
-	if (is_in_array(t, first, ARRAY_LEN(first))) {
+	Terminal follow[] = { OR, AND, GT, LT, GE, LE, NE, DEQ, CAT, ADD, SUB, MUL, DIV, MOD, POW, COMMA, SEMICOLON, DO, THEN, RPAREN, RBRACKET, RBRACE };
+
+	if (is_in_array(t, first, ARRAY_LEN(first)) && parser->panic_mode_flag == false) {
 		symbol_stack_pop(parser);
-		
+
 		symbol_stack_push_rule(parser, LPAREN, FNPARAMS, RPAREN, BLOCK, END);
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
-		
+
 		parser->panic_mode_flag = false;
 	}
 	else {
@@ -970,16 +957,16 @@ void rule_fnbody(Parser *parser, Terminal t)
 void rule_fnexp(Parser *parser, Terminal t)
 {
 	Terminal first[] = { FUNCTION };
-	Terminal follow[] = { OR, AND, GT, LT, GE, LE, NE, DEQ, CAT, ADD, SUB, MUL, DIV, POW, COMMA, SEMICOLON, DO, THEN, RPAREN, RBRACKET, RBRACE };
-	
-	if (is_in_array(t, first, ARRAY_LEN(first))) {
+	Terminal follow[] = { OR, AND, GT, LT, GE, LE, NE, DEQ, CAT, ADD, SUB, MUL, DIV, MOD, POW, COMMA, SEMICOLON, DO, THEN, RPAREN, RBRACKET, RBRACE };
+
+	if (is_in_array(t, first, ARRAY_LEN(first)) && parser->panic_mode_flag == false) {
 		symbol_stack_pop(parser);
-		
+
 		symbol_stack_push_rule(parser, FUNCTION, FNBODY);
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
-		
+
 		parser->panic_mode_flag = false;
 	}
 	else {
@@ -991,15 +978,15 @@ void rule_fnparams(Parser *parser, Terminal t)
 {
 	Terminal first[] = { NAME };
 	Terminal follow[] = { RPAREN };
-	
-	if (is_in_array(t, first, ARRAY_LEN(first))) {
+
+	if (is_in_array(t, first, ARRAY_LEN(first)) && parser->panic_mode_flag == false) {
 		symbol_stack_pop(parser);
-		
+
 		symbol_stack_push(parser, NAMES);
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
-		
+
 		parser->panic_mode_flag = false;
 	}
 	else {
@@ -1010,15 +997,15 @@ void rule_names(Parser *parser, Terminal t)
 {
 	Terminal first[] = { NAME };
 	Terminal follow[] = { IN, RPAREN, EQ };
-	
-	if (is_in_array(t, first, ARRAY_LEN(first))) {
+
+	if (is_in_array(t, first, ARRAY_LEN(first)) && parser->panic_mode_flag == false) {
 		symbol_stack_pop(parser);
-		
+
 		symbol_stack_push_rule(parser, NAME, NAMES_);
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
-		
+
 		parser->panic_mode_flag = false;
 	}
 	else {
@@ -1030,15 +1017,15 @@ void rule_names_(Parser *parser, Terminal t)
 {
 	Terminal first[] = { COMMA };
 	Terminal follow[] = { IN, RPAREN, EQ };
-	
-	if (is_in_array(t, first, ARRAY_LEN(first))) {
+
+	if (is_in_array(t, first, ARRAY_LEN(first)) && parser->panic_mode_flag == false) {
 		symbol_stack_pop(parser);
-		
+
 		symbol_stack_push_rule(parser, COMMA, NAME, NAMES_);
 	}
 	else if (is_in_array(t, follow, ARRAY_LEN(follow))) {
 		symbol_stack_pop(parser);
-		
+
 		parser->panic_mode_flag = false;
 	}
 	else {

@@ -51,7 +51,7 @@ typedef enum symbol {
 	REPEAT,
 	RETURN,
 	FUNCTION,
-	
+
 	// Nonterminals
 	BLOCK,
 	STMT,
